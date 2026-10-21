@@ -1,0 +1,13 @@
+# Private local instance policy and everything generated from it (see README "Private config").
+/config.json
+/manifest.json
+/features/timecard/config.js
+/shared/origins.generated.mjs
+*.gen-tmp-*
+
+node_modules/
+dist/
+*.log
+
+# Private list of terms that must never appear in the repo (see tests/no-private-terms.test.mjs).
+/private-terms.txt

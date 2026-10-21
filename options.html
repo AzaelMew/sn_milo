@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ServiceNow Milo options</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font: 14px/1.45 system-ui, sans-serif; max-width: 46rem; margin: 2rem auto; padding: 0 1rem; color: #e4e4ea; background: #15161a; }
+  a { color: #8ab4f8; }
+  button, textarea { background: #23252b; color: #e4e4ea; border: 1px solid #3a3d46; border-radius: 4px; }
+  button { padding: .3rem .7rem; cursor: pointer; }
+  button:hover { background: #2d3038; }
+  h1 { font-size: 1.4rem; }
+  ul { list-style: none; padding: 0; }
+  li { border: 1px solid #343741; background: #1c1e23; border-radius: 6px; padding: .6rem .8rem; margin: .5rem 0; }
+  label { font-weight: 600; display: flex; gap: .5rem; align-items: center; }
+  .effective { margin: .25rem 0 0 1.6rem; color: #a0a3ad; }
+  .effective[data-enabled="true"] { color: #6fd17f; }
+  .pending { margin: .35rem 0 0 1.6rem; color: #e0a458; }
+  .status-line { margin: .25rem 0 0 1.6rem; color: #a0a3ad; min-height: 1em; }
+  #error { background: #3a1a1c; border: 1px solid #7a3338; color: #ffb4b4; padding: .6rem .8rem; border-radius: 6px; }
+  #warnings { color: #e0a458; }
+  #notice { background: #17301c; border: 1px solid #2f6a3a; color: #8fe0a0; padding: .6rem .8rem; border-radius: 6px; }
+  .migration { margin: .5rem 0 0 1.6rem; }
+  .migration h3 { font-size: 1rem; margin: .4rem 0; }
+  .migration fieldset { border: 1px solid #343741; border-radius: 6px; margin: .4rem 0; }
+  .migration textarea { display: block; width: 100%; box-sizing: border-box; margin: .3rem 0; font-family: monospace; }
+  .migration label.choice { font-weight: normal; align-items: flex-start; margin: .3rem 0; }
+  .hint { color: #a0a3ad; margin: .2rem 0; }
+  .action-error { color: #ff9a9a; }
+  #rules { margin-top: 1.5rem; }
+  #rules h2 { font-size: 1.1rem; margin: 0 0 .3rem; }
+  .rule { display: grid; grid-template-columns: auto 1fr 9rem 1fr auto; gap: .5rem; align-items: center; border: 1px solid #343741; background: #1c1e23; border-radius: 6px; padding: .5rem .7rem; margin: .4rem 0; }
+  .rule input[type=text], .rule select { background: #23252b; color: #e4e4ea; border: 1px solid #3a3d46; border-radius: 4px; padding: .25rem .4rem; min-width: 0; font: inherit; }
+  .rule.invalid { border-color: #7a3338; }
+  .rules-actions { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin: .6rem 0; }
+  .rules-actions .spacer { flex: 1; }
+  .list-editor { margin-top: 1.5rem; }
+  .list-editor h2 { font-size: 1.1rem; margin: 0 0 .3rem; }
+  .list-editor textarea { display: block; width: 100%; box-sizing: border-box; font: inherit; padding: .4rem .5rem; }
+</style>
+</head>
+<body>
+<h1>ServiceNow Milo</h1>
+<div id="error" role="alert" hidden></div>
+<div id="warnings" hidden></div>
+<div id="notice" role="status" hidden></div>
+<ul id="features" aria-busy="true"></ul>
+<p class="note">Settings are stored per browser profile (not synced). Alert notifications additionally require a completed
+migration (dedupe import or an explicit first-run fallback decision, offered below each pending alert); the checkbox
+alone never activates them.</p>
+<section id="rules" aria-labelledby="rules-title">
+  <h2 id="rules-title">Critical alert rules</h2>
+  <p class="hint">A ticket in the SOC Jono queue (active, state New) triggers an alert when it matches <em>any</em> enabled rule. Within a rule, every filled-in field must match; leave a field on "Any" / empty to ignore it. A ticket matching several rules still alerts once. Rules are stored in this browser profile only.</p>
+  <div id="rule-list"></div>
+  <p id="rules-error" class="action-error" role="alert" hidden></p>
+  <div class="rules-actions">
+    <button type="button" id="rule-add">Add rule</button>
+    <button type="button" id="rules-save">Save rules</button>
+    <span id="rules-state" class="hint"></span>
+    <span class="spacer"></span>
+    <button type="button" id="forget-seen" title="Forget which tickets already alerted, so matching tickets alert again on the next poll">Forget known tickets…</button>
+  </div>
+</section>
+<section class="list-editor" id="ix-accounts" aria-labelledby="ix-accounts-title">
+  <h2 id="ix-accounts-title">Interaction alert accounts</h2>
+  <p class="hint">One account name per line (as shown in ServiceNow). New interactions for these accounts alert; with none listed, the interaction alert does nothing. Stored in this browser profile only.</p>
+  <textarea id="ix-accounts-text" rows="4" placeholder="One account name per line" spellcheck="false"></textarea>
+  <p id="ix-accounts-error" class="action-error" role="alert" hidden></p>
+  <div class="rules-actions"><button type="button" id="ix-accounts-save">Save</button><span id="ix-accounts-state" class="hint"></span></div>
+</section>
+<section class="list-editor" id="inf-recipients" aria-labelledby="inf-recipients-title">
+  <h2 id="inf-recipients-title">Informatica button recipients</h2>
+  <p class="hint">One email address per line: the people the button adds to the external work notes list. With none listed the button refuses to run. Stored in this browser profile only.</p>
+  <textarea id="inf-recipients-text" rows="4" placeholder="name@example.com" spellcheck="false"></textarea>
+  <p id="inf-recipients-error" class="action-error" role="alert" hidden></p>
+  <div class="rules-actions"><button type="button" id="inf-recipients-save">Save</button><span id="inf-recipients-state" class="hint"></span></div>
+</section>
+<script type="module" src="options.js"></script>
+</body>
+</html>

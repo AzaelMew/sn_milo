@@ -1,0 +1,155 @@
+/* CSS only. No observers, polling, stylesheet reads, network hooks or filters.
+   The manifest limits injection to this instance's exact /kb route (+ queries).
+   Styles also apply automatically to asynchronously rendered portal widgets. */
+:root {
+  color-scheme: dark !important;
+  --tk-kb-bg: #12161d;
+  --tk-kb-surface: #1a202a;
+  --tk-kb-raised: #232c39;
+  --tk-kb-text: #dee5ef;
+  --tk-kb-muted: #aab8cc;
+  --tk-kb-border: #3a485b;
+  --tk-kb-link: #8fc3ff;
+  background-color: var(--tk-kb-bg) !important;
+}
+html body {
+  background-color: var(--tk-kb-bg) !important;
+  color: var(--tk-kb-text) !important;
+}
+html body :where(main, section, .body, .sp-page-root, .sp-page, .sp-page-body,
+  .page, .page-content, .page-container, .main-content, .content, .content-wrapper,
+  .container, .container-fluid, .wrapper, .kb-page, .kb-content) {
+  background-color: var(--tk-kb-bg) !important;
+  color: var(--tk-kb-text) !important;
+}
+html body :where(.panel, .well, .card, .widget, .list-group-item, .modal-content,
+  .dropdown-menu, .popover, .kb-article, .kb-article-wrapper, .kb-article-content,
+  .kb-article-body, .article-content, .article-body, .kb_category, .kb-category,
+  .search-results, .search-result, .kb-search-results) {
+  background-color: var(--tk-kb-surface) !important;
+  color: var(--tk-kb-text) !important;
+  border-color: var(--tk-kb-border) !important;
+  background-image: none !important;
+}
+html body :where(.panel-heading, .panel-footer, .card-header, .card-footer,
+  .modal-header, .modal-footer, .popover-title, .navbar, .navbar-default,
+  .navbar-inverse, header, footer, .breadcrumb, .nav-tabs, .pagination > li > a,
+  .pagination > li > span) {
+  background-color: var(--tk-kb-raised) !important;
+  color: var(--tk-kb-text) !important;
+  border-color: var(--tk-kb-border) !important;
+  background-image: none !important;
+}
+html body :where(h1, h2, h3, h4, h5, h6, p, label, legend, .panel-title,
+  .text-dark, .text-black, .text-body, .kb-title, .kb-article-title,
+  .dropdown-menu > li > a, .navbar-brand, .navbar-nav > li > a) {
+  color: var(--tk-kb-text) !important;
+}
+html body :where(.text-muted, .help-block, small, .kb-meta, .kb-article-meta) {
+  color: var(--tk-kb-muted) !important;
+}
+html body a:not(.btn) { color: var(--tk-kb-link) !important; }
+html body a:not(.btn):hover { color: #c1ddff !important; }
+html body :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea, select, .form-control, .input-group-addon, .select2-choice,
+  .select2-container .select2-choice, .select2-dropdown, .select2-results,
+  .select2-search input) {
+  background-color: var(--tk-kb-bg) !important;
+  color: var(--tk-kb-text) !important;
+  border-color: var(--tk-kb-border) !important;
+  background-image: none !important;
+}
+html body :where(input, textarea)::placeholder { color: var(--tk-kb-muted) !important; }
+html body :where(input, textarea, select, button, a):focus-visible {
+  outline: 2px solid var(--tk-kb-link) !important;
+  outline-offset: 2px;
+}
+html body :where(.btn, button) {
+  background-color: var(--tk-kb-raised) !important;
+  color: var(--tk-kb-text) !important;
+  border-color: var(--tk-kb-border) !important;
+  background-image: none !important;
+}
+html body :where(.btn-primary, .btn-info, button[type="submit"]) {
+  background-color: #255b91 !important;
+  color: #ffffff !important;
+  border-color: #4b8ac4 !important;
+}
+html body :where(.btn-success, .alert-success) {
+  background-color: #173c2c !important;
+  color: #a8e6c1 !important;
+  border-color: #397858 !important;
+}
+html body :where(.btn-warning, .alert-warning) {
+  background-color: #42331a !important;
+  color: #f4d699 !important;
+  border-color: #8f7138 !important;
+}
+html body :where(.btn-danger, .alert-danger) {
+  background-color: #47252b !important;
+  color: #ffc0c8 !important;
+  border-color: #96515e !important;
+}
+html body .alert-info {
+  background-color: #1b344b !important;
+  color: #c0e1ff !important;
+  border-color: #3a678d !important;
+}
+html body :where(.btn, button):hover { box-shadow: inset 0 0 0 100vmax #ffffff0b; }
+html body :where(.nav-tabs > li.active > a, .nav-pills > li.active > a,
+  .pagination > .active > a, .list-group-item.active,
+  .dropdown-menu > li > a:hover, .dropdown-menu > li > a:focus) {
+  background-color: #294260 !important;
+  color: #ffffff !important;
+  border-color: var(--tk-kb-border) !important;
+}
+html body :where(table, .table, td, th, .table > thead > tr > th,
+  .table > tbody > tr > td, .table > tbody > tr > th) {
+  background-color: var(--tk-kb-surface) !important;
+  color: var(--tk-kb-text) !important;
+  border-color: var(--tk-kb-border) !important;
+}
+html body :where(.table-striped > tbody > tr:nth-of-type(odd) > td,
+  .table-striped > tbody > tr:nth-of-type(odd) > th, th) {
+  background-color: var(--tk-kb-raised) !important;
+}
+html body :where(pre, code, kbd, samp) {
+  background-color: var(--tk-kb-bg) !important;
+  color: #c2d8f4 !important;
+  border-color: var(--tk-kb-border) !important;
+}
+html body :where(blockquote, hr, .divider, .panel, .list-group-item) {
+  border-color: var(--tk-kb-border) !important;
+}
+/* Rich-text KB articles often carry their own pasted light-mode colors.
+   Reset text blocks without inverting screenshots, diagrams or videos. */
+html body :where(.kb-article-content, .kb-article-body, .article-content,
+  .article-body, .kb-content) :where(p, span, div, li, ul, ol, strong, b, em,
+  i:not(.fa), font, h1, h2, h3, h4, h5, h6, blockquote) {
+  color: var(--tk-kb-text) !important;
+  background-color: transparent !important;
+}
+/* Catch common inline white surfaces outside standard portal widgets. */
+html body :where(div, section, article, span, p, li):is([style*="background-color: rgb(255, 255, 255)"],
+    [style*="background-color:rgb(255, 255, 255)"],
+    [style*="background-color: #fff"], [style*="background-color:#fff"],
+    [style*="background-color: white"], [style*="background-color:white"],
+    [style*="background: white"], [style*="background:white"]):not(img):not(svg) {
+  background-color: var(--tk-kb-surface) !important;
+  color: var(--tk-kb-text) !important;
+}
+html body :where(.kb-article-content, .kb-article-body, .article-content,
+  .article-body, .kb-content) [style*="background"]:not(table):not(td):not(th):not(pre):not(code):not(img) {
+  background-color: transparent !important;
+}
+/* Service Portal's breadcrumb widget is not Bootstrap .breadcrumb.
+   Its wrapper and current-page span explicitly set light-mode colors. */
+html body .breadcrumbs-container {
+  background-color: var(--tk-kb-raised) !important;
+  color: var(--tk-kb-text) !important;
+}
+html body .breadcrumbs-container .a-disabled {
+  color: var(--tk-kb-text) !important;
+}
+html body ::selection { background-color: #355983; color: #ffffff; }
+html { scrollbar-color: #526179 var(--tk-kb-bg); }
