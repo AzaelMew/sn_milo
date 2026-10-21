@@ -2,10 +2,12 @@
 // client or person is named in the repository). Pure module shared by the worker, the options page and the tests.
 //   ix.accountsV1    {schema:1, accounts:[name,…]}     interaction alert: accounts whose new interactions alert
 //   inf.recipientsV1 {schema:1, emails:[address,…]}    Informatica button: people added to the external work notes list
+//   inf.resolveV1    {schema:1, enabled:boolean, notes}  Informatica button: also resolve the ticket after the note is saved (default OFF)
 // Nothing stored (or malformed) ⇒ an EMPTY list: the interaction alert polls nothing and the Informatica button
 // refuses to run until something is configured.
 export const IX_ACCOUNTS_KEY = 'ix.accountsV1';
 export const INF_RECIPIENTS_KEY = 'inf.recipientsV1';
+export const INF_RESOLVE_KEY = 'inf.resolveV1';
 export const MAX_ACCOUNTS = 20;
 export const MAX_RECIPIENTS = 10;
 
@@ -48,3 +50,18 @@ function normalize(stored, field, validate) {
 }
 export const normalizeAccounts = stored => normalize(stored, 'accounts', validateAccounts);
 export const normalizeRecipients = stored => normalize(stored, 'emails', validateRecipients);
+
+/** Resolution notes typed on the options page (user data, so no client wording lives in source). */
+export function validateResolveNotes(input) {
+  if (typeof input !== 'string') return {ok: false, error: 'resolution notes must be text'};
+  const notes = input.trim();
+  if (!notes) return {ok: false, error: 'resolution notes are required to turn this on'};
+  if (notes.length > 200 || /[\u0000-\u001f\u007f]/.test(notes)) return {ok: false, error: 'resolution notes: one line, max 200 characters'};
+  return {ok: true, notes};
+}
+/** Resolve-after-escalation option. Fail closed: only an explicit, well-formed `enabled: true` WITH valid notes turns it on. */
+export function normalizeResolve(stored) {
+  const o = stored && typeof stored === 'object' ? stored : {};
+  const n = validateResolveNotes(o.notes);
+  return {enabled: o.schema === 1 && o.enabled === true && n.ok, notes: n.ok ? n.notes : ''};
+}

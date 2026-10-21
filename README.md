@@ -181,18 +181,26 @@ would refuse their messages (`sender.url` has origin `null`). A feature that nee
 
 ## Informatica button
 
-`features/informatica-button/` — `page.js` (MAIN bridge, `document_start`) and `content.js` (ISOLATED button,
-`document_idle`); production origin only, top frame only, exactly as the original manifest (asserted in
-`tests/manifest-policy.test.mjs`). No worker module and no router messages. DOM lookup, placement, labels and the
-workflow order are unchanged except the last step (1.4.0): add the three people → verify the saved *External work notes list* with a read-only
-GET through the bridge → **Save** (skipped when already persisted) → verify → open *External work notes* → paste the
-Description → the record's **Save** again, which submits the pending note instead of clicking the compose pane's
-Post (retried once if swallowed; success = the editor empties, otherwise the run fails and the note stays pasted;
-no enabled Save after pasting ⇒ fails, nothing submitted). `localStorage.snInfDryRun = "1"` stops right before the
-final Save click — **after** the list Save, so dry run is *not* write-free; never use it on production as a test.
+**Resolve option (1.5.0, off by default).** Options page → *Informatica button: resolve the ticket* (`inf.resolveV1`
+`{schema:1, enabled, notes}`; the notes text is user data, never in source). When on, after the note **Save is
+confirmed** (the editor emptied after Post) the bridge resolves the open incident: GET precheck (must be an open *AMS Informatica…* incident, state
+Assigned/WIP/On hold) → **one** PATCH `{state:"6", close_code:"Solution provided", close_notes:<notes>}` → GET read-back
+that must match. No retry (a timeout reports "outcome unknown"); a dry run never resolves; if the note did not post,
+nothing is written to the ticket. The bridge's `resolve-record` is the only write it can make, limited to `incident`.
 
-- **Origin.** The original hard-coded the production host. Milo keeps the same scope through the generated
-  production-only manifest matches and the worker-scoped effective state (the controller reports the feature
+`features/informatica-button/` — `page.js` (MAIN bridge, `document_start`) and `content.js` (ISOLATED button,
+`document_idle`); production **and test** origins (1.5.0: the test host was added so the resolve option can be tried safely), top frame only (asserted in
+`tests/manifest-policy.test.mjs`). No worker module and no router messages. DOM lookup, placement, labels and the
+workflow order are unchanged except the last step (1.5.0 reverts the 1.4.0 change): add the three people → verify the saved *External work notes list* with a read-only
+GET through the bridge → **Save** (skipped when already persisted) → verify → open *External work notes* → paste the
+Description → click the compose pane's **Post External work notes** once it has stayed enabled (a single click, never
+retried: Post is not idempotent; success = the editor empties, otherwise the run fails and the note stays pasted; Post
+never enabled ⇒ fails, nothing submitted). 1.4.0 relied on the record's Save submitting the pending note; the test
+instance showed it does not. `localStorage.snInfDryRun = "1"` stops right before the Post click — **after** the list
+Save, so dry run is *not* write-free; never use it on production as a test.
+
+- **Origin.** The original hard-coded the production host. Milo scopes it through the generated
+  manifest matches (production + test since 1.5.0) and the worker-scoped effective state (the controller reports the feature
   enabled only on the configured production origin); bridge messages use the exact `location.origin`. Opaque or
   non-https frames exit immediately.
 - **Lifecycle.** Both scripts are inert until the settings controller (ISOLATED) / MAIN helper reports the feature
@@ -203,9 +211,9 @@ final Save click — **after** the list Save, so dry run is *not* write-free; ne
   previous one including its settings subscription. Clicks run only for the live session's own connected button
   while the feature is enabled.
 - **Cancellation checkpoints.** A checkpoint runs synchronously immediately before every page write (typing a
-  person, picking a suggestion, Save, opening the tab, pasting, each final Save attempt) and after every await; a stopped
+  person, picking a suggestion, Save, opening the tab, pasting, the Post click) and after every await; a stopped
   session (disable, supersede, extension context invalidated) or a disabled effective state throws there, so no
-  further write begins after disable and a cancelled run never retries the final Save. Completed or in-flight writes are not
+  further write begins after disable and a cancelled run never retries (or repeats) the Post click. Completed or in-flight writes are not
   undone (Milo cannot revert a server save/post): `stop()` immediately reports what was already done — e.g.
   *"added 1 of 3 people … (not saved)"*, *"Save clicked (the record may have been saved)"*, *"Save clicked for the note (it
   may have been posted)"* — on the console (`[SN-INF]`), in a 12 s `#sn-inf-notice` status element and in
@@ -490,7 +498,7 @@ native-form patches — are skipped): per open tab whose URL origin *exactly* eq
 entry matching the **frame's own** origin + path becomes a `scripting.executeScript({files, world})` targeting
 explicit document IDs. `allFrames` is used only for a read-only URL/origin inventory, never file/CSS injection;
 blank, srcdoc, blob, opaque and foreign documents are excluded. All-frames entries may reach eligible subframes;
-other entries are top-frame only. The test host gets shared settings and the timecard overlay only; Informatica,
+other entries are top-frame only. The test host gets shared settings, the timecard overlay and the Informatica button only; 
 alerts and KB only reach production, KB only `/kb` and `/kb?*`. KB's gated CSS is installed even while disabled,
 after setting its off attribute, so enabling later works without reload. A matching `removeCSS` before each
 programmatic insertion prevents stacking across passes; it never removes declarative CSS.

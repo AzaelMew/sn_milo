@@ -37,10 +37,10 @@ test('production case page: shared first, every production feature, timecard ove
   assert.ok(!ids(plan[0]).includes('kb-dark-toggle'));
 });
 
-test('test host receives ONLY timecard overlay + shared', () => {
+test('test host receives ONLY timecard overlay, informatica button + shared', () => {
   const [plan] = planReinjection([{id: 2, url: `${T}/now/cwf/agent/record/x/1`}], {origins: ORIGINS});
-  assert.deepEqual(ids(plan), ['settings-controller', 'main-settings', 'timecard-overlay']);
-  for (const s of plan.steps) assert.ok(['shared', 'timecard'].includes(s.feature));
+  assert.deepEqual(ids(plan), ['settings-controller', 'main-settings', 'informatica-bridge', 'informatica-button', 'timecard-overlay']);
+  for (const s of plan.steps) assert.ok(['shared', 'timecard', 'informatica-button'].includes(s.feature));
 });
 
 test('/kb and /kb?* get the KB toggle (JS); gated css even while disabled; other kb-like paths do not', () => {
@@ -119,7 +119,7 @@ test('reinjectOpenTabs: exact targets, per-step injection, no other chrome API',
   assert.deepEqual(ctl, {target: {tabId: 1, documentIds: ['doc-1']}, files: ['shared/controller.js'], world: 'ISOLATED'});
   const bridge = exec.find(i => i.files[0] === 'features/informatica-button/page.js');
   assert.deepEqual(bridge, {target: {tabId: 1, documentIds: ['doc-1']}, files: ['features/informatica-button/page.js'], world: 'MAIN'});
-  assert.equal(exec.filter(i => i.target.tabId === 2).length, 3);
+  assert.equal(exec.filter(i => i.target.tabId === 2).length, 5);
   assert.deepEqual(calls.filter(c => c[0] === 'css').map(c => c[1]), [{target: {tabId: 1, documentIds: ['doc-1']}, files: ['features/kb-dark/dark.css']}]);
   assert.deepEqual(summary.tabs.map(t => [t.tabId, t.ok]), [[1, true], [2, true]]);
   assert.equal(summary.failed, 0);

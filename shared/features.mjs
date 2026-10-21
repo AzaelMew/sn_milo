@@ -30,7 +30,7 @@ export const FEATURES = freezeDeep({
       // bare sys_id (source matchKey)
       entryPattern: /^[0-9a-f]{32}$/i}
   },
-  'informatica-button': {label: 'Informatica button', origins: ['production']},
+  'informatica-button': {label: 'Informatica button', origins: ['production', 'test']},
   'kb-dark': {label: 'KB dark mode', origins: ['production']},
   timecard: {label: 'Timecard overlay (native-form compatibility always on)', origins: ['production', 'test']}
 });

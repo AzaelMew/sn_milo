@@ -78,14 +78,14 @@ test('real settings path: disabled at load → nothing mounts, bridge inert; non
   assert.equal(buttons(g)[0].style.display, 'none', 'no AMS Informatica record → hidden (original behaviour)');
 });
 
-test('origin policy: the test host never mounts the button or arms the bridge (feature scoped to production)', async () => {
+test('origin policy: the test host mounts the button and arms the bridge; opaque origins stay inert', async () => {
   const w = world();
   const f = w.frame(TEST);
   createWorkspace({clock: {setTimeout, clearTimeout}, doc: f.doc});
   loadAll(f);
   await settle();
-  assert.equal(buttons(f).length, 0);
-  assert.equal(f.eval('main', 'window.__snInfBridge.active'), false);
+  assert.equal(buttons(f).length, 1);
+  assert.equal(f.eval('main', 'window.__snInfBridge.active'), true);
   const opaque = createFrame({origin: 'null', document: domMixin(createDocument())});
   opaque.setChrome({runtime: {id: undefined}});
   opaque.run('main', PAGE);
@@ -150,15 +150,15 @@ async function runToEnd(p, max = 90000) {
   return p.controller().lastRun;
 }
 
-test('workflow order on a mocked record: people → verify (GET) → Save → verify persisted → tab → paste → Save (submits the note)', async () => {
+test('workflow order on a mocked record: people → verify (GET) → Save → verify persisted → tab → paste → Post (submits the note)', async () => {
   const p = createInformaticaPage().load();
   await p.clock.advance(10);
   assert.equal(p.buttons().length, 1);
   click(p);
   const result = await runToEnd(p);
-  assert.equal(result.status, 'saved');
-  assert.deepEqual(events(p), [...peopleSteps, 'save', 'tab', 'paste', 'save']);
-  assert.ok(!p.ws.log.includes('post'), 'the compose pane Post button is never clicked');
+  assert.equal(result.status, 'posted');
+  assert.deepEqual(events(p), [...peopleSteps, 'save', 'tab', 'paste', 'post']);
+  assert.equal(p.ws.log.filter(e => e === 'post').length, 1, 'Post clicked exactly once');
   assert.deepEqual(p.ws.chips(), EMAILS);
   assert.equal(p.ws.server.list, EMAILS.join(','));
   assert.deepEqual(p.ws.server.posts, [p.ws.desc.value]);
@@ -168,23 +168,23 @@ test('workflow order on a mocked record: people → verify (GET) → Save → ve
     assert.equal(f.url, `/api/now/table/incident/${SYS_ID}?sysparm_fields=u_external_work_notes_list`);
     assert.equal(f.opts.headers['X-UserToken'], 'tok');
   }
-  assert.equal(p.button().textContent, 'Saved ✓');
+  assert.equal(p.button().textContent, 'Posted ✓');
   await p.clock.advance(7000);
   assert.equal(p.button().textContent, 'Informatica', 'label restored');
   assert.equal(p.button().disabled, false);
 });
 
-test('already-persisted list: no people typed, no list Save click; the final Save still submits the note', async () => {
+test('already-persisted list: no people typed, no list Save click; Post still submits the note', async () => {
   const p = createInformaticaPage({workspace: {savedList: EMAILS.join(', '), presetChips: EMAILS}}).load();
   await p.clock.advance(10);
   click(p);
   const result = await runToEnd(p);
-  assert.equal(result.status, 'saved');
-  assert.deepEqual(events(p), ['tab', 'paste', 'save']);
+  assert.equal(result.status, 'posted');
+  assert.deepEqual(events(p), ['tab', 'paste', 'post']);
   assert.deepEqual(p.ws.server.posts, [p.ws.desc.value]);
 });
 
-test('dry run stops right before the final Save click — but AFTER the list Save (dry run is not write-free)', async () => {
+test('dry run stops right before the Post click — but AFTER the list Save (dry run is not write-free)', async () => {
   const p = createInformaticaPage({dryRun: true}).load();
   await p.clock.advance(10);
   click(p);
@@ -192,7 +192,7 @@ test('dry run stops right before the final Save click — but AFTER the list Sav
   assert.equal(result.status, 'dry-run');
   assert.deepEqual(events(p), [...peopleSteps, 'save', 'tab', 'paste']);
   assert.ok(!p.ws.log.includes('post'));
-  assert.equal(p.button().textContent, 'Dry run: ready to save');
+  assert.equal(p.button().textContent, 'Dry run: ready to post');
 });
 
 test('original failure handling preserved: missing Save button → "Failed: Save button not found", nothing posted', async () => {
@@ -304,7 +304,7 @@ test('cancellation after the Save click, while waiting for persistence: the note
   assert.equal(p.fetches.length, fetchesAtEnd, 'verification polling stopped');
 });
 
-test('cancellation during the final Save readiness wait: never clicked; pasted text reported (not saved)', async () => {
+test('cancellation during the Post readiness wait: never clicked; pasted text reported (not posted)', async () => {
   let p;
   p = createInformaticaPage().load();
   await p.clock.advance(10);
@@ -315,44 +315,51 @@ test('cancellation during the final Save readiness wait: never clicked; pasted t
   assert.deepEqual(events(p), [...peopleSteps, 'save', 'tab', 'paste']);
   const r = p.controller().lastRun;
   assert.deepEqual(plain(r.completed), ['added 3 of 3 people to "External work notes list"', 'Save confirmed',
-    'opened the External work notes tab', 'pasted the Description into the External work notes editor (not saved)']);
+    'opened the External work notes tab', 'pasted the Description into the External work notes editor (not posted)']);
 });
 
-test('cancellation right after the final Save click: no retry click; reported as possibly posted', async () => {
-  // the save is swallowed (editor never empties) so the run would retry once; cancellation forbids it
-  const p = cancelAt('onNoteSave', {workspace: {noteOnSave: false}});
+test('cancellation right after the Post click: reported as possibly posted, nothing further runs', async () => {
+  const p = cancelAt('onPost', {workspace: {postWorks: false}});
   await p.clock.advance(10);
   click(p);
   await p.clock.advance(60000);
-  assert.equal(p.ws.log.filter(e => e === 'save').length, 2, 'the list Save plus exactly one final Save click, no retry');
+  assert.equal(p.ws.log.filter(e => e === 'post').length, 1);
   const r = p.controller().lastRun;
   assert.equal(r.status, 'cancelled');
-  assert.equal(r.completed.at(-1), 'Save clicked for the note (it may have been posted)');
+  assert.equal(r.completed.at(-1), 'Post clicked for the note (it may have been posted)');
 });
 
-test('without cancellation a swallowed final Save click is retried once, then fails (the note stays in the editor)', async () => {
-  const p = createInformaticaPage({workspace: {noteOnSave: false}}).load();
+test('a swallowed Post click is NOT retried (Post is not idempotent): the run fails, the note stays in the editor', async () => {
+  const p = createInformaticaPage({workspace: {postWorks: false}}).load();
   await p.clock.advance(10);
   click(p);
   const r = await runToEnd(p);
   assert.equal(r.status, 'failed');
-  assert.equal(p.ws.log.filter(e => e === 'save').length, 3, 'list Save + two final Save clicks');
-  assert.ok(!p.ws.log.includes('post'));
+  assert.equal(p.ws.log.filter(e => e === 'post').length, 1, 'exactly one Post click');
   assert.equal(p.ws.server.posts.length, 0);
   assert.match(p.ws.editor.body.innerText, /Nightly Informatica/, 'the pasted note is left in the editor');
-  assert.equal(p.button().textContent, 'Failed: Save did not post the note (the editor still has the text)');
+  assert.match(p.button().textContent, /^Failed: Post did not submit the note/);
 });
 
-test('final Save unavailable after pasting: the run fails, nothing is submitted, the pasted note stays in the editor', async () => {
+test('the record Save never substitutes for Post: only the list Save is clicked', async () => {
+  const p = createInformaticaPage({workspace: {postWorks: false, saveSubmitsNote: true}}).load();
+  await p.clock.advance(10);
+  click(p);
+  const r = await runToEnd(p);
+  assert.equal(p.ws.log.filter(e => e === 'save').length, 1, 'only the list Save');
+  assert.equal(r.status, 'failed');
+});
+
+test('Post never enabled after pasting: the run fails, nothing is submitted, the pasted note stays in the editor', async () => {
   const p = createInformaticaPage({workspace: {savedList: EMAILS.join(', '), presetChips: EMAILS}}).load();
   await p.clock.advance(10);
-  p.ws.save.disabled = true; // a form that is not dirty may offer no enabled Save
+  p.ws.editor.body.addEventListener('keyup', () => { p.ws.post.disabled = true; }); // the editor never enables Post
   click(p);
   const r = await runToEnd(p);
   assert.equal(r.status, 'failed');
   assert.deepEqual(events(p), ['tab', 'paste']);
   assert.equal(p.ws.server.posts.length, 0);
-  assert.equal(p.button().textContent, 'Failed: Save button not available after pasting; nothing was saved');
+  assert.equal(p.button().textContent, 'Failed: Post button never became ready; nothing was posted');
   assert.ok(!p.ws.log.includes('post') && !p.ws.log.includes('save'));
 });
 
@@ -368,8 +375,8 @@ test('re-enable after a cancelled run: exactly one fresh button; the old run sta
   assert.deepEqual(events(p), [`pick:${EMAILS[0]}`, `chip:${EMAILS[0]}`], 'the cancelled run did not resume');
   click(p);
   const r = await runToEnd(p);
-  assert.equal(r.status, 'saved');
-  assert.deepEqual(events(p).slice(2), [...peopleSteps.slice(2), 'save', 'tab', 'paste', 'save'], 'new run picks up the remaining people');
+  assert.equal(r.status, 'posted');
+  assert.deepEqual(events(p).slice(2), [...peopleSteps.slice(2), 'save', 'tab', 'paste', 'post'], 'new run picks up the remaining people');
   assert.equal(p.buttons().length, 1);
 });
 
@@ -384,4 +391,79 @@ test('extension context invalidated mid-run (controller retires): button removed
   assert.deepEqual(p.ws.writes(), []);
   assert.equal(p.controller().lastRun.reason, 'invalidated');
   assert.equal(p.messageListeners('isolated'), 0, 'pending bridge request listeners removed');
+});
+
+// ---- guarded resolve (opt-in): State Resolved + Resolution code + user-supplied notes after the note is posted ----
+const NOTES = 'Escalated (example notes)';
+const patches = p => p.fetches.filter(f => f.method === 'PATCH');
+
+test('resolve off (default): the note is posted and the ticket is never written to', async () => {
+  const p = createInformaticaPage().load();
+  await p.clock.advance(10);
+  click(p);
+  const result = await runToEnd(p);
+  assert.equal(result.status, 'posted');
+  assert.equal(patches(p).length, 0);
+  assert.equal(p.record.state, '1');
+});
+
+test('resolve on: after the confirmed note Save, ONE PATCH with the fixed state/code and the user notes, verified by read-back', async () => {
+  const p = createInformaticaPage({resolve: {notes: NOTES}}).load();
+  await p.clock.advance(10);
+  click(p);
+  const result = await runToEnd(p);
+  assert.equal(result.status, 'resolved');
+  assert.ok(result.completed.includes('ticket resolved (verified)'), JSON.stringify(result.completed));
+  assert.deepEqual(p.ws.server.posts, [p.ws.desc.value], 'note posted first');
+  assert.equal(patches(p).length, 1, 'exactly one write, no retry');
+  const [patch] = patches(p);
+  assert.equal(patch.url, `/api/now/table/incident/${SYS_ID}?sysparm_fields=number,short_description,state,close_code,close_notes`);
+  assert.equal(patch.opts.headers['X-UserToken'], 'tok');
+  assert.deepEqual(JSON.parse(patch.opts.body), {state: '6', close_code: 'Solution provided', close_notes: NOTES});
+  assert.deepEqual([p.record.state, p.record.close_code, p.record.close_notes], ['6', 'Solution provided', NOTES]);
+  assert.equal(p.button().textContent, 'Posted + resolved ✓');
+});
+
+test('resolve on + dry run: nothing is resolved (the run stops before the note Save)', async () => {
+  const p = createInformaticaPage({dryRun: true, resolve: {notes: NOTES}}).load();
+  await p.clock.advance(10);
+  click(p);
+  const result = await runToEnd(p);
+  assert.equal(result.status, 'dry-run');
+  assert.equal(patches(p).length, 0);
+  assert.equal(p.record.state, '1');
+});
+
+test('resolve on but the note never posts: the run fails and the ticket is NOT touched', async () => {
+  const p = createInformaticaPage({resolve: {notes: NOTES}, workspace: {postWorks: false}}).load();
+  await p.clock.advance(10);
+  click(p);
+  const result = await runToEnd(p);
+  assert.equal(result.status, 'failed');
+  assert.equal(patches(p).length, 0);
+  assert.equal(p.record.state, '1');
+});
+
+test('resolve refuses a ticket that is not open or not an Informatica ticket (note stays posted, no PATCH)', async () => {
+  for (const [incident, pattern] of [[{state: '6'}, /not open/], [{short_description: 'Printer is broken'}, /not an Informatica ticket/]]) {
+    const p = createInformaticaPage({resolve: {notes: NOTES}, incident}).load();
+    await p.clock.advance(10);
+    click(p);
+    const result = await runToEnd(p);
+    assert.equal(result.status, 'failed');
+    assert.match(result.error, pattern);
+    assert.equal(patches(p).length, 0);
+    assert.deepEqual(p.ws.server.posts, [p.ws.desc.value]);
+  }
+});
+
+test('resolve whose PATCH is silently ignored: read-back mismatch is reported, still a single PATCH', async () => {
+  const p = createInformaticaPage({resolve: {notes: NOTES}, patchWorks: false}).load();
+  await p.clock.advance(10);
+  click(p);
+  const result = await runToEnd(p);
+  assert.equal(result.status, 'failed');
+  assert.match(result.error, /read-back does not match/);
+  assert.equal(patches(p).length, 1);
+  assert.ok(result.completed.some(c => /resolve was requested/.test(c)), JSON.stringify(result.completed));
 });

@@ -2,8 +2,8 @@
 // the original standalone Informatica button extension 1.1.0 content.js. DOM lookup, placement, labels, the workflow steps and their
 // ORDER are unchanged: add the three people → verify the saved list via the MAIN bridge (read-only GET) → click
 // Save unless already persisted → verify it persisted → open the External work notes tab → paste the Description →
-// (dry run stops here, i.e. AFTER Save) → click the record's Save when stable (it submits the pending note instead of
-// the compose pane's Post button), retry once if the click was swallowed.
+// (dry run stops here, i.e. AFTER Save) → click the compose pane's Post External work notes button once it is stable
+// (a single click, never retried), then confirm the editor emptied.
 //
 // Milo lifecycle (see README "Informatica button"):
 //   - origin: the original compared location.origin with a hard-coded production host. Here the scope comes from the
@@ -16,7 +16,7 @@
 //     script stops the previous one (session + settings subscription) before subscribing itself.
 //   - clicks run only for the live session's own connected button while the controller reports the feature enabled.
 //   - cancellation checkpoints: checkpoint(run) runs synchronously immediately before EVERY page write (typing,
-//     picking a person, Save, opening the tab, pasting, the final Save — each attempt) and after every await. A stopped
+//     picking a person, Save, opening the tab, pasting, the Post click) and after every await. A stopped
 //     session/run throws there, so no further write begins after disable. Writes already done or in flight (a Save
 //     click whose server request may be running, a person whose pick was clicked) are NOT undone: stop() reports
 //     them immediately ("Already done: …. Nothing was undone.") on the console, in a short-lived #sn-inf-notice
@@ -40,7 +40,7 @@
 	const BUTTON_ID = "sn-inf-button";
 	const NOTICE_ID = "sn-inf-notice";
 	const LIST_LABEL = "External work notes list";
-	// Set localStorage.snInfDryRun = "1" to stop right before the final Save click.
+	// Set localStorage.snInfDryRun = "1" to stop right before the Post click.
 	const dryRun = () => localStorage.getItem("snInfDryRun") === "1";
 
 	const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -283,13 +283,49 @@
 		});
 	}
 
+	// Ask the MAIN bridge to resolve the open record (one fixed payload, verified by read-back). No retry here or in
+	// the bridge: after a timeout the outcome is unknown, so the run reports that instead of trying again.
+	function resolveViaBridge(r) {
+		return new Promise(resolve => {
+			const ref = recordRef();
+			if (!ref) return resolve({ ok: false, error: "could not read record id from URL" });
+			const id = `${Date.now()}-${++requestSeq}`;
+			const finish = value => {
+				clearTimeout(timer);
+				window.removeEventListener("message", onMessage);
+				r.cleanups.delete(cancel);
+				resolve(value);
+			};
+			const cancel = () => finish({ ok: false, unknown: true, error: "cancelled while the request was in flight" });
+			const timer = setTimeout(() => finish({ ok: false, unknown: true, error: "timed out waiting for the bridge" }), 70000);
+			function onMessage(event) {
+				const data = event.data;
+				if (event.source !== window || event.origin !== ORIGIN ||
+					data?.source !== "sn-inf-page" || data.type !== "resolve-record-result" || data.id !== id) return;
+				finish(data);
+			}
+			r.cleanups.add(cancel);
+			window.addEventListener("message", onMessage);
+			window.postMessage({ source: "sn-inf-extension", type: "resolve-record", id, notes: r.resolveNotes, ...ref }, ORIGIN);
+		});
+	}
+
+	// Only after the note post is confirmed: a ticket is never closed on top of an escalation that did not post.
+	async function resolveTicket(r) {
+		checkpoint(r); // last checkpoint before the one write
+		r.progress.resolveRequested = true;
+		const result = await resolveViaBridge(r);
+		if (result.ok) { r.progress.resolved = true; return; }
+		fail(result.unknown ? `resolve outcome unknown (${result.error}); check the ticket`
+			: `could not resolve: ${result.error}`);
+	}
+
 	const hasAllEmails = value => {
 		const saved = String(value || "").toLowerCase().split(",").map(s => s.trim());
 		return EMAILS.every(email => saved.includes(email));
 	};
 
-	// The record action bar's Save button (visible only). Used twice: persisting the people list, and at the very end
-	// to submit the pending External work note.
+	// The record action bar's Save button (visible only). Used to persist the people list.
 	const saveButtonOf = ctx => {
 		const bar = deepFind(ctx.scope, el => el.tagName === "NOW-RECORD-COMMON-UIACTIONBAR");
 		return bar && deepFind(bar.shadowRoot, el => el.tagName === "BUTTON" && text(el) === "Save" && visible(el));
@@ -316,8 +352,8 @@
 		fail("Save did not persist the External work notes list within 20s");
 	}
 
-	// The compose pane's Post button is never clicked any more; its visibility only proves the External work notes tab
-	// is actually on screen.
+	// The compose pane's Post External work notes button: clicked once to submit the note; its visibility also proves
+	// the External work notes tab is actually on screen.
 	const postButtonOf = ctx => {
 		const compose = deepFind(ctx.scope, el => el.tagName === "NOW-ACTIVITY-STREAM-COMPOSE-CONNECTED");
 		return compose && deepFind(compose.shadowRoot, el => el.id === "postButton-u_external_work_notes");
@@ -338,7 +374,7 @@
 			label(el) === "External work notes");
 	};
 
-	// True only when the External work notes tab is selected AND its (unused) Post
+	// True only when the External work notes tab is selected AND its Post
 	// button is actually on screen (the button exists in the DOM for every
 	// compose tab, so existence alone proves nothing).
 	function externalTabActive() {
@@ -397,35 +433,41 @@
 		return f?.contentDocument?.body?.innerText.trim() || "";
 	};
 
-	// Click the record's Save only once its button has stayed enabled and the tab active for a stretch, then confirm the
-	// pending note was submitted: the External work notes editor empties. A swallowed click leaves the text (Save is
-	// idempotent, so one retry is safe); if the text stays, the run fails and the pasted note is left in the editor.
-	async function saveNoteWhenReady(r) {
+	// Post the pending External work note with the compose pane's "Post External work notes" button, only once it has
+	// stayed enabled and the tab active for a stretch, then confirm the note was submitted: the editor empties. Post is
+	// NOT idempotent, so there is exactly ONE click and no retry (a second click after a slow UI could duplicate the
+	// note); if the text stays, the run fails and the pasted note is left in the editor for the user to look at.
+	// (The record's Save does not submit a pending external note on every instance, so it is not relied on.)
+	const postClickTarget = post => deepFind(post.shadowRoot, el => el.tagName === "BUTTON") || post;
+	const postEnabled = post => {
+		const inner = deepFind(post.shadowRoot, el => el.tagName === "BUTTON");
+		return !post.disabled && post.getAttribute("disabled") === null && post.getAttribute("aria-disabled") !== "true" &&
+			!(inner && (inner.disabled || inner.getAttribute("aria-disabled") === "true"));
+	};
+	async function postNoteWhenReady(r) {
 		const STABLE_MS = 800;
 		let since = 0;
 		const end = Date.now() + 15000;
 		for (;;) {
 			checkpoint(r);
 			const c = findContext();
-			const b = c && saveButtonOf(c);
-			const ready = externalTabActive() && b && !b.disabled && editorText();
+			const post = c && postButtonOf(c);
+			const ready = externalTabActive() && post && postEnabled(post) && editorText();
 			if (!ready) since = 0;
 			else if (!since) since = Date.now();
 			else if (Date.now() - since >= STABLE_MS) break;
-			if (Date.now() > end) fail("Save button never became ready; not saving");
+			if (Date.now() > end) fail("Post button never became ready; nothing was posted");
 			await sleep(150);
 		}
-		for (let attempt = 0; attempt < 2; attempt++) {
-			const c = requireCtx();
-			const b = saveButtonOf(c);
-			if (!externalTabActive() || !b) fail("External work notes tab is not active; not saving");
-			setLabel(r.session, "Saving…");
-			checkpoint(r); // last checkpoint before EACH Save click: a cancelled run never retries
-			r.progress.noteSaveClicks++;
-			b.click();
-			if (await waitFor(() => !editorText(), 10000, 150, r)) { r.progress.noteConfirmed = true; return; }
-		}
-		fail("Save did not post the note (the editor still has the text)");
+		const c = requireCtx();
+		const post = postButtonOf(c);
+		if (!externalTabActive() || !post) fail("External work notes tab is not active; not posting");
+		setLabel(r.session, "Posting…");
+		checkpoint(r); // last checkpoint before the one Post click
+		r.progress.notePostClicks++;
+		postClickTarget(post).click();
+		if (await waitFor(() => !editorText(), 15000, 150, r)) { r.progress.noteConfirmed = true; return; }
+		fail("Post did not submit the note (the editor still has the text); not retried, check the ticket");
 	}
 
 	// --- Partial-completion report -------------------------------------------
@@ -436,9 +478,11 @@
 		if (p.saveConfirmed) done.push("Save confirmed");
 		else if (p.saveClicked) done.push("Save clicked (the record may have been saved)");
 		if (p.tabOpened) done.push("opened the External work notes tab");
-		if (p.pasted && !p.noteSaveClicks) done.push("pasted the Description into the External work notes editor (not saved)");
-		if (p.noteConfirmed) done.push("note Save confirmed");
-		else if (p.noteSaveClicks) done.push("Save clicked for the note (it may have been posted)");
+		if (p.pasted && !p.notePostClicks) done.push("pasted the Description into the External work notes editor (not posted)");
+		if (p.noteConfirmed) done.push("note post confirmed");
+		else if (p.notePostClicks) done.push("Post clicked for the note (it may have been posted)");
+		if (p.resolved) done.push("ticket resolved (verified)");
+		else if (p.resolveRequested) done.push("resolve was requested (the ticket may be resolved; check it)");
 		return done;
 	}
 
@@ -485,7 +529,7 @@
 		if (s.run && !s.run.finished) return;
 		const r = { session: s, cancelled: null, finished: false, cleanups: new Set(), result: null,
 			progress: { people: 0, alreadySaved: false, saveClicked: false, saveConfirmed: false, tabOpened: false,
-				pasted: false, noteSaveClicks: 0, noteConfirmed: false } };
+				pasted: false, notePostClicks: 0, noteConfirmed: false, resolveRequested: false, resolved: false } };
 		s.run = r;
 		controller.lastRun = { status: "running", completed: [] };
 		b.disabled = true;
@@ -494,6 +538,7 @@
 		try {
 			const started = await leaseMessage("informatica-run-start", lease);
 			EMAILS = Array.isArray(started.emails) ? started.emails.filter(e => typeof e === "string" && e) : [];
+			r.resolveNotes = typeof started.resolve?.notes === "string" && started.resolve.notes ? started.resolve.notes : null; // user option, off by default; delivered with the lease
 			if (!EMAILS.length) throw new Error("informatica-no-recipients: add them on the options page");
 			checkpoint(r);
 			if (maintenance.owner) throw new Error("informatica-maintenance-busy");
@@ -512,12 +557,16 @@
 			checkpoint(r);
 			if (dryRun()) {
 				r.result = { status: "dry-run", completed: describe(r.progress) };
-				setLabel(s, "Dry run: ready to save", 8000);
+				setLabel(s, "Dry run: ready to post", 8000);
 				return;
 			}
-			await saveNoteWhenReady(r);
-			r.result = { status: "saved", completed: describe(r.progress) };
-			setLabel(s, "Saved ✓", 6000);
+			await postNoteWhenReady(r);
+			if (r.resolveNotes) {
+				setLabel(s, "Resolving…");
+				await resolveTicket(r);
+			}
+			r.result = { status: r.progress.resolved ? "resolved" : "posted", completed: describe(r.progress) };
+			setLabel(s, r.progress.resolved ? "Posted + resolved ✓" : "Posted ✓", 6000);
 		} catch (error) {
 			if (error instanceof Cancelled || r.cancelled) return; // reported by cancelRun at stop time
 			console.warn("[SN-INF]", error);

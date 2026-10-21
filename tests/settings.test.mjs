@@ -13,7 +13,7 @@ const READY = {schema: 1, state: 'ready', method: 'notify-current', decidedAt: 1
 test('catalog: exactly the five known features, labels, origin roles and preserved alert keys', () => {
   assert.deepEqual(FEATURE_NAMES, ALL);
   assert.equal(FEATURES.timecard.label, 'Timecard overlay (native-form compatibility always on)');
-  for (const name of ALL) assert.deepEqual(FEATURES[name].origins, name === 'timecard' ? ['production', 'test'] : ['production']);
+  for (const name of ALL) assert.deepEqual(FEATURES[name].origins, ['timecard', 'informatica-button'].includes(name) ? ['production', 'test'] : ['production']);
   assert.equal(FEATURES['critical-alert'].alert.dedupeKey, 'seenMatchesV4');
   assert.equal(FEATURES['interaction-alert'].alert.dedupeKey, 'seenInteractionsV1');
   assert.equal(FEATURES['critical-alert'].alert.migrationKey, 'crit.migrationV1');
@@ -79,12 +79,12 @@ test('effective = preference AND completed migration for alerts; preference alon
   assert.equal(seedingOff['critical-alert'].seedOnly, false);
 });
 
-test('effective record carries per-origin scope: production all five, test host timecard only', () => {
+test('effective record carries per-origin scope: production all five, test host informatica + timecard', () => {
   const effective = computeEffective(parsePreferences(undefined).preferences, {});
   const record = buildEffectiveRecord({effective, origins: ORIGINS, epoch: 'e', rev: 3, at: 5});
   assert.equal(record.schema, 1);
   assert.deepEqual(record.origins[PROD], ALL);
-  assert.deepEqual(record.origins[TEST], ['timecard']);
+  assert.deepEqual(record.origins[TEST], ['informatica-button', 'timecard']);
   assert.equal(record.rev, 3);
   assert.equal(JSON.stringify(record).includes('"features":{"critical-alert":{"enabled":false'), true);
   assert.equal('preferences' in record, false, 'raw preferences are never part of the content-facing record');

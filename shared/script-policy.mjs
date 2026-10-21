@@ -3,7 +3,7 @@
 // exact agreement. Entry order is manifest order (Chromium injects same-timing entries in manifest order).
 // Rules enforced by validatePolicy():
 //   - feature is a known feature or 'shared' (settings infrastructure with no feature behaviour);
-//   - origins ⊆ the feature's allowed roles (FEATURES[*].origins): only timecard (and shared) may use 'test';
+//   - origins ⊆ the feature's allowed roles (FEATURES[*].origins): only timecard, informatica-button (and shared) may use 'test';
 //   - kb-dark paths are exactly ['/kb', '/kb?*'] (never '/kb*', which also matches /kb-other and /kb_view.do);
 //   - world ISOLATED|MAIN, run_at document_start|document_end|document_idle, boolean all_frames;
 //   - js/css are repo-relative extension files; MAIN entries carry no css;
@@ -31,9 +31,9 @@ export const SCRIPT_POLICY = Object.freeze([
   {id: 'main-settings', feature: 'shared', origins: ['production', 'test'], paths: ['/*'], world: 'MAIN',
     run_at: 'document_start', all_frames: true, js: ['shared/main-settings.js']},
   // Informatica button: exactly the original manifest's two entries (production only, top frame only).
-  {id: 'informatica-bridge', feature: 'informatica-button', origins: ['production'], paths: ['/*'], world: 'MAIN',
+  {id: 'informatica-bridge', feature: 'informatica-button', origins: ['production', 'test'], paths: ['/*'], world: 'MAIN',
     run_at: 'document_start', all_frames: false, js: ['features/informatica-button/page.js']},
-  {id: 'informatica-button', feature: 'informatica-button', origins: ['production'], paths: ['/*'], world: 'ISOLATED',
+  {id: 'informatica-button', feature: 'informatica-button', origins: ['production', 'test'], paths: ['/*'], world: 'ISOLATED',
     run_at: 'document_idle', all_frames: false, js: ['features/informatica-button/content.js']},
   // KB dark mode: the original's single declarative CSS entry (exact /kb + /kb?*, document_start, top frame), now
   // attribute-gated, plus the ISOLATED toggle that owns the off attribute (after the controller: same world/timing ⇒

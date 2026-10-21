@@ -44,7 +44,7 @@ function loadBridge({ token = "tok", origin = ORIGIN, ok = true, value = "a@x.co
 	window.window = window;
 	if (settings && !existing) window.__snMiloMainSettings = settings.api;
 	const context = existing ? existing.__context : vm.createContext({
-		window, location: { origin }, AbortController,
+		window, location: { origin }, AbortController, setTimeout, clearTimeout,
 		fetch: fetchImpl || (async (url, opts) => { fetches.push({ url, opts }); return { ok, status: ok ? 200 : 500, json: async () => ({ result: { u_external_work_notes_list: value } }) }; })
 	});
 	window.__context = context;
@@ -156,4 +156,69 @@ test("double injection in the same MAIN context: the new bridge replaces the old
 test("page.js is an IIFE: evaluating twice in one context declares no global lexical bindings", () => {
 	const h = loadBridge();
 	assert.doesNotThrow(() => loadBridge({ window: h.window }));
+});
+
+// ---- guarded resolve (the bridge's only write) --------------------------------------------------------------------
+function resolveHarness({ record = {}, patchOk = true, applyPatch = true } = {}) {
+	const rec = { number: "INC1", short_description: "AMS Informatica error: x", state: "1", close_code: "", close_notes: "", ...record };
+	const calls = [];
+	const h = loadBridge({ fetchImpl: async (url, opts = {}) => {
+		calls.push({ url, method: opts.method || "GET", body: opts.body });
+		if (opts.method === "PATCH") {
+			if (!patchOk) return { ok: false, status: 403, json: async () => ({}) };
+			if (applyPatch) Object.assign(rec, JSON.parse(opts.body));
+		}
+		return { ok: true, status: 200, json: async () => ({ result: { ...rec } }) };
+	} });
+	const send = async (extra = {}) => {
+		await h.listeners[0]({ source: h.window, origin: ORIGIN,
+			data: { source: "sn-inf-extension", type: "resolve-record", id: "z1", table: "incident", sysId: "a".repeat(32), notes: "Notes", ...extra } });
+		return h.posts.map(p => p.data).filter(d => d.type === "resolve-record-result").pop();
+	};
+	return { h, rec, calls, send };
+}
+
+test("resolve-record: GET precheck, one PATCH with the fixed state/code + supplied notes, GET read-back", async () => {
+	const r = resolveHarness();
+	const out = await r.send();
+	assert.deepEqual([out.ok, out.number, out.state], [true, "INC1", "6"]);
+	assert.deepEqual(r.calls.map(c => c.method), ["GET", "PATCH", "GET"]);
+	assert.deepEqual(JSON.parse(r.calls[1].body), { state: "6", close_code: "Solution provided", close_notes: "Notes" });
+});
+
+test("resolve-record refuses: wrong table, bad id, missing/odd notes, non-Informatica, not-open — and never PATCHes", async () => {
+	for (const extra of [{ table: "problem" }, { sysId: "nope" }, { notes: "" }, { notes: "a\nb" }, { notes: "x".repeat(201) }]) {
+		const r = resolveHarness();
+		const out = await r.send(extra);
+		assert.equal(out.ok, false, JSON.stringify(extra));
+		assert.equal(r.calls.length, 0, "no request at all for an invalid reference");
+	}
+	for (const record of [{ short_description: "Printer broken" }, { state: "6" }, { state: "7" }, { state: "8" }]) {
+		const r = resolveHarness({ record });
+		const out = await r.send();
+		assert.equal(out.ok, false);
+		assert.equal(out.stage, "precheck");
+		assert.ok(!r.calls.some(c => c.method === "PATCH"), JSON.stringify(record));
+	}
+});
+
+test("resolve-record: a rejected or ignored PATCH is reported by the read-back, never retried", async () => {
+	for (const opts of [{ patchOk: false }, { applyPatch: false }]) {
+		const r = resolveHarness(opts);
+		const out = await r.send();
+		assert.equal(out.ok, false);
+		assert.equal(out.stage, "verify");
+		assert.equal(r.calls.filter(c => c.method === "PATCH").length, 1);
+	}
+});
+
+test("resolve-record is inert while the feature is disabled and without g_ck", async () => {
+	const settings = settingsStub(false);
+	const h = loadBridge({ settings });
+	assert.equal(h.listeners.length, 0, "no listener while disabled");
+	const noTok = resolveHarness();
+	noTok.h.window.g_ck = "";
+	const out = await noTok.send();
+	assert.equal(out.ok, false);
+	assert.equal(noTok.calls.length, 0);
 });

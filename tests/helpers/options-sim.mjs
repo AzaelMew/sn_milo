@@ -14,7 +14,7 @@ export function optionsPage() {
     setAttribute(name, value) { this[name] = value; }
     querySelectorAll() { return this.children.flatMap(n => [n, ...n.querySelectorAll()]).filter(n => ['input', 'textarea', 'button'].includes(n.tagName)); }
   }
-  const nodes = Object.fromEntries(['features', 'error', 'warnings', 'notice', 'rule-list', 'rules-error', 'rules-state', 'rule-add', 'rules-save', 'forget-seen', ...['ix-accounts', 'inf-recipients'].flatMap(p => [`${p}-text`, `${p}-error`, `${p}-state`, `${p}-save`])].map(id => [id, new Element('div')]));
+  const nodes = Object.fromEntries(['features', 'error', 'warnings', 'notice', 'rule-list', 'rules-error', 'rules-state', 'rule-add', 'rules-save', 'forget-seen', ...['ix-accounts', 'inf-recipients'].flatMap(p => [`${p}-text`, `${p}-error`, `${p}-state`, `${p}-save`]), 'inf-resolve-enabled', 'inf-resolve-notes', 'inf-resolve-error', 'inf-resolve-state', 'inf-resolve-save'].map(id => [id, new Element('div')]));
   const document = {getElementById: id => nodes[id], createElement: tag => new Element(tag), documentElement: new Element('html')};
   const requests = [], focus = [], changes = [];
   const chrome = {runtime: {sendMessage(message) { return new Promise(resolve => requests.push({message, resolve})); }}, storage: {local: {async get() { return {}; }, async set() {}}, onChanged: {addListener(fn) { changes.push(fn); }}}};

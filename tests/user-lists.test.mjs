@@ -1,9 +1,9 @@
 // User-supplied lists (shared/user-lists.mjs): validation, normalization, and the worker paths that serve them.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {validateAccounts, validateRecipients, normalizeAccounts, normalizeRecipients, MAX_ACCOUNTS, MAX_RECIPIENTS} from '../shared/user-lists.mjs';
+import {validateAccounts, validateRecipients, normalizeAccounts, normalizeRecipients, validateResolveNotes, normalizeResolve, MAX_ACCOUNTS, MAX_RECIPIENTS} from '../shared/user-lists.mjs';
 import {createMiloBackground} from '../shared/router.mjs';
-import {createFakeChrome, createFakeStorage, deliver, contentSender, ORIGINS, PROD} from './helpers/fake-chrome.mjs';
+import {createFakeChrome, createFakeStorage, deliver, contentSender, ORIGINS, PROD, TEST} from './helpers/fake-chrome.mjs';
 import {createInteractionAlert} from '../features/interaction-alert/background.mjs';
 
 test('accounts: trimmed, blank lines dropped, case-insensitive duplicates merged, injection refused', () => {
@@ -50,4 +50,40 @@ test('worker: get-accounts serves the stored accounts (empty by default); Inform
   storage.put('inf.recipientsV1', {schema: 1, emails: ['alice@example.com']});
   const ok = await run();
   assert.deepEqual([ok.ok, ok.emails], [true, ['alice@example.com']]);
+});
+
+test('resolve option: fail closed; needs enabled:true, schema 1 AND valid notes', () => {
+  assert.deepEqual(normalizeResolve(undefined), {enabled: false, notes: ''});
+  assert.deepEqual(normalizeResolve({schema: 1, enabled: true, notes: ' Escalated '}), {enabled: true, notes: 'Escalated'});
+  for (const bad of [{schema: 1, enabled: true}, {schema: 1, enabled: true, notes: ''}, {schema: 2, enabled: true, notes: 'x'},
+    {schema: 1, enabled: 'yes', notes: 'x'}, {schema: 1, enabled: true, notes: 'a\nb'}, {schema: 1, enabled: true, notes: 'x'.repeat(201)}, 'on', 5, null]) {
+    assert.equal(normalizeResolve(bad).enabled, false, JSON.stringify(bad));
+  }
+  assert.equal(validateResolveNotes('   ').ok, false);
+  assert.equal(validateResolveNotes(7).ok, false);
+});
+
+test('worker: the Informatica lease carries the resolve option only when it is on and valid', async () => {
+  const storage = createFakeStorage({'inf.recipientsV1': {schema: 1, emails: ['alice@example.com']}});
+  const {chrome} = createFakeChrome({storage});
+  const app = createMiloBackground({chrome, origins: ORIGINS, features: [], log: {warn() {}}});
+  app.install();
+  await app.ensureReady();
+  const inf = {id: chrome.runtime.id, tab: {id: 1, url: `${PROD}/now/record`}, url: `${PROD}/now/record`, origin: PROD, documentId: 'd', frameId: 0, documentLifecycle: 'active'};
+  const lease = async () => {
+    const id = crypto.randomUUID();
+    const r = await new Promise(resolve => app.onMessage({feature: 'milo', type: 'informatica-run-start', lease: id}, inf, resolve));
+    await new Promise(resolve => app.onMessage({feature: 'milo', type: 'informatica-run-end', lease: id}, inf, resolve));
+    return r;
+  };
+  assert.equal((await lease()).resolve, null, 'default off');
+  storage.put('inf.resolveV1', {schema: 1, enabled: true, notes: 'Escalated'});
+  assert.deepEqual((await lease()).resolve, {notes: 'Escalated'});
+  storage.put('inf.resolveV1', {schema: 1, enabled: true, notes: ''});
+  assert.equal((await lease()).resolve, null, 'no notes: stays off');
+  // the test host may take a run lease too (1.5.0); a foreign origin may not
+  const from = origin => ({...inf, tab: {id: 2, url: `${origin}/now/record`}, url: `${origin}/now/record`, origin, documentId: 'd2'});
+  const ask = origin => new Promise(resolve => app.onMessage({feature: 'milo', type: 'informatica-run-start', lease: crypto.randomUUID()}, from(origin), resolve));
+  assert.equal((await ask(TEST)).ok, true);
+  assert.equal((await ask('https://evil.example')).error, 'wrong-origin');
 });

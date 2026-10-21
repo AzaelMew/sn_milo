@@ -209,13 +209,12 @@ const el = (doc, tag, attrs = {}, text = '') => {
 
 /**
  * Mocked AMS Informatica workspace record. Every "write" is local: picking people adds chips, Save copies the chips
- * into server.list after saveDelay and — when the External work notes editor holds text and noteOnSave is true —
- * submits that pending note (server.posts, editor emptied after postDelay); the compose pane's Post button only
- * exists as a probe and must never be clicked by the extension. Hooks let
+ * into server.list after saveDelay (it does not submit a pending note unless saveSubmitsNote); the compose pane's Post
+ * button submits the pending note (server.posts, editor emptied after postDelay) unless postWorks is false. Hooks let
  * tests intervene at exact points (e.g. disable the feature right after a chip appears).
  */
 export function createWorkspace({clock, doc = createDocument(), title = 'AMS Informatica: nightly load failed', description = 'Nightly Informatica load failed at step 3; please investigate the DW job.',
-  savedList = '', presetChips = [], saveButton = true, saveDelay = 300, postDelay = 300, saveWorks = true, noteOnSave = true, hooks = {}} = {}) {
+  savedList = '', presetChips = [], saveButton = true, saveDelay = 300, postDelay = 300, saveWorks = true, postWorks = true, saveSubmitsNote = false, hooks = {}} = {}) {
   const log = [];
   const server = {list: savedList, posts: []};
   const scope = el(doc, 'macroponent-f51912f4c700201072b211d4d8c26010');
@@ -234,10 +233,10 @@ export function createWorkspace({clock, doc = createDocument(), title = 'AMS Inf
     log.push('save');
     hooks.onSave?.();
     clock.setTimeout(() => { if (saveWorks) server.list = chips().join(','); }, saveDelay);
+    // Real instances: the record's Save does NOT submit a pending external note (only Post does).
     const pending = editor.body.innerText.trim();
-    if (pending && extFrame.shown) {
-      hooks.onNoteSave?.();
-      clock.setTimeout(() => { if (noteOnSave) { server.posts.push(pending); editor.body.textContent = ''; post.disabled = true; } }, postDelay);
+    if (saveSubmitsNote && pending && extFrame.shown) {
+      clock.setTimeout(() => { server.posts.push(pending); editor.body.textContent = ''; post.disabled = true; }, postDelay);
     }
   });
   // form: External work notes list (glide list with chips) + Description
@@ -313,7 +312,7 @@ export function createWorkspace({clock, doc = createDocument(), title = 'AMS Inf
     log.push('post');
     hooks.onPost?.();
     const text = editor.body.innerText;
-    clock.setTimeout(() => { server.posts.push(text); editor.body.textContent = ''; post.disabled = true; }, postDelay);
+    if (postWorks) clock.setTimeout(() => { server.posts.push(text); editor.body.textContent = ''; post.disabled = true; }, postDelay);
   });
   tabExt.addEventListener('click', () => {
     log.push('tab');
@@ -370,7 +369,7 @@ function createMainSettingsStub(state) {
 }
 
 export function createInformaticaPage({origin = 'https://prod.service-now.com', pathname = `/now/sow/record/incident/${SYS_ID}`, enabled = true,
-  clock = createClock(), workspace = {}, dryRun = false, fetchDelay = 50, token = 'tok'} = {}) {
+  clock = createClock(), workspace = {}, dryRun = false, fetchDelay = 50, token = 'tok', resolve = null, incident = {}, patchWorks = true} = {}) {
   const doc = createDocument();
   const ws = createWorkspace({clock, doc, ...workspace});
   const logs = [];
@@ -387,7 +386,7 @@ export function createInformaticaPage({origin = 'https://prod.service-now.com', 
       Date: clock.Date, document: doc, localStorage, AbortController, structuredClone,
       crypto: globalThis.crypto,
       // Workflow-only tests mock authorization; gate integration tests replace this with the real router.
-      chrome: {runtime: {sendMessage: (_message, callback) => callback({ok:true, emails: EMAILS})}},
+      chrome: {runtime: {sendMessage: (_message, callback) => callback({ok:true, emails: EMAILS, resolve})}},
       location: {origin, pathname, href: `${origin}${pathname}`},
       addEventListener(type, fn) { w.listeners.push({type, fn}); },
       removeEventListener(type, fn) { const i = w.listeners.findIndex(l => l.type === type && l.fn === fn); if (i >= 0) w.listeners.splice(i, 1); },
@@ -411,15 +410,21 @@ export function createInformaticaPage({origin = 'https://prod.service-now.com', 
   isolated.g.__snMiloController = milo.api;
   main.g.__snMiloMainSettings = mainSettings.api;
   main.g.g_ck = token;
+  // Modelled incident for the guarded resolve (GET/PATCH on the record with the resolve field list).
+  const record = {number: 'INC0000001', short_description: 'AMS Informatica error: example', state: '1', close_code: '', close_notes: '', ...incident};
   main.g.fetch = (url, opts = {}) => {
     fetches.push({url, method: opts.method || 'GET', opts});
-    return new Promise((resolve, reject) => {
-      const t = clock.setTimeout(() => resolve({ok: true, status: 200, json: async () => ({result: {u_external_work_notes_list: ws.server.list}})}), fetchDelay);
+    return new Promise((resolveFetch, reject) => {
+      const isResolve = url.includes('short_description') || opts.method === 'PATCH';
+      const t = clock.setTimeout(() => {
+        if (isResolve && opts.method === 'PATCH' && patchWorks) Object.assign(record, JSON.parse(opts.body));
+        resolveFetch({ok: true, status: 200, json: async () => ({result: isResolve ? {...record} : {u_external_work_notes_list: ws.server.list}})});
+      }, fetchDelay);
       opts.signal?.addEventListener?.('abort', () => { clock.clearTimeout(t); reject(new Error('aborted')); });
     });
   };
   const page = {
-    clock, doc, ws, logs, fetches, isolated, main, milo, mainSettings, localStorage,
+    clock, doc, ws, logs, fetches, isolated, main, milo, mainSettings, localStorage, record,
     run(kind, rel) { vm.runInContext(read(rel), (kind === 'main' ? main : isolated).g, {filename: rel}); },
     load() { page.run('main', PAGE); page.run('isolated', CONTENT); return page; },
     setEnabled(v) { settingsState.enabled = v; milo.reconcileAll(); mainSettings.notify(); },

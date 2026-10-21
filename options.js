@@ -8,7 +8,7 @@
 // is reused across re-renders so in-progress inputs (chosen files, pasted JSON, radio choice, errors) survive
 // unrelated refreshes.
 import {RULES_KEY, MAX_RULES, PRIORITIES, normalizeRules, validateRules, newRuleId} from './shared/rules.mjs';
-import {IX_ACCOUNTS_KEY, INF_RECIPIENTS_KEY, validateAccounts, validateRecipients, normalizeAccounts, normalizeRecipients} from './shared/user-lists.mjs';
+import {IX_ACCOUNTS_KEY, INF_RECIPIENTS_KEY, INF_RESOLVE_KEY, validateAccounts, validateRecipients, normalizeAccounts, normalizeRecipients, normalizeResolve, validateResolveNotes} from './shared/user-lists.mjs';
 import {viewModel, parseSnapshotTexts, buildImportMessage, buildFallbackMessage, FALLBACK_OPTIONS, fallbackConfirmText} from './shared/options-view.mjs';
 
 const list = document.getElementById('features');
@@ -286,8 +286,41 @@ function listEditor({prefix, key, field, validate, normalize}) {
 listEditor({prefix: 'ix-accounts', key: IX_ACCOUNTS_KEY, field: 'accounts', validate: validateAccounts, normalize: normalizeAccounts});
 listEditor({prefix: 'inf-recipients', key: INF_RECIPIENTS_KEY, field: 'emails', validate: validateRecipients, normalize: normalizeRecipients});
 
+// ---- Informatica: resolve the ticket after the note is saved (checkbox + notes, saved explicitly) ---------------
+const resolveBox = document.getElementById('inf-resolve-enabled');
+const resolveNotes = document.getElementById('inf-resolve-notes');
+const resolveErr = document.getElementById('inf-resolve-error');
+const resolveState = document.getElementById('inf-resolve-state');
+let resolveDirty = false;
+const setResolveDirty = v => { resolveDirty = v; resolveState.textContent = v ? 'Unsaved changes' : ''; };
+async function loadResolve() {
+  try {
+    const stored = (await chrome.storage.local.get(INF_RESOLVE_KEY))[INF_RESOLVE_KEY];
+    const n = normalizeResolve(stored);
+    resolveBox.checked = n.enabled;
+    resolveNotes.value = n.notes || (stored && typeof stored.notes === 'string' ? stored.notes : '');
+    resolveErr.hidden = true;
+    setResolveDirty(false);
+  } catch (error) { resolveErr.textContent = `Could not load: ${error.message}`; resolveErr.hidden = false; }
+}
+resolveBox.addEventListener('change', () => setResolveDirty(true));
+resolveNotes.addEventListener('input', () => setResolveDirty(true));
+document.getElementById('inf-resolve-save').addEventListener('click', async () => {
+  const enabled = resolveBox.checked;
+  const v = validateResolveNotes(resolveNotes.value);
+  if (enabled && !v.ok) { resolveErr.textContent = v.error; resolveErr.hidden = false; return; }
+  try {
+    await chrome.storage.local.set({[INF_RESOLVE_KEY]: {schema: 1, enabled, notes: v.ok ? v.notes : ''}});
+    resolveErr.hidden = true;
+    setResolveDirty(false);
+    resolveState.textContent = enabled ? 'Saved: resolving is ON — applies from the next use' : 'Saved: resolving is off';
+  } catch (error) { resolveErr.textContent = `Could not save: ${error.message}`; resolveErr.hidden = false; }
+});
+loadResolve();
+
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
+  if (INF_RESOLVE_KEY in changes && !resolveDirty) loadResolve();
   for (const ed of listEditors) if (ed.key in changes && !ed.dirty) ed.load();
   if (Object.keys(changes).some(k => WATCHED.has(k)) && !busy) refresh();
   if (RULES_KEY in changes && !dirty) loadRules();

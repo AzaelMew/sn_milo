@@ -43,7 +43,7 @@ import {
 } from './features.mjs';
 
 import {createInformaticaGate} from './informatica-gate.mjs';
-import {INF_RECIPIENTS_KEY, normalizeRecipients} from './user-lists.mjs';
+import {INF_RECIPIENTS_KEY, INF_RESOLVE_KEY, normalizeRecipients, normalizeResolve} from './user-lists.mjs';
 export const MILO = 'milo';
 const has = (o, k) => o != null && Object.prototype.hasOwnProperty.call(o, k);
 const SETTINGS_KEYS = new Set([PREFERENCES_KEY, ...ALERT_FEATURES.map(n => FEATURES[n].alert.migrationKey)]);
@@ -288,8 +288,9 @@ export function createMiloBackground({chrome, origins, features = [], now = () =
       // The people to add are user data (options page); refuse BEFORE taking the run lease when none are configured.
       const {emails} = normalizeRecipients((await chrome.storage.local.get(INF_RECIPIENTS_KEY))[INF_RECIPIENTS_KEY]);
       if (!emails.length) return {ok:false, error:'informatica-no-recipients: add them on the options page'};
+      const resolved = normalizeResolve((await chrome.storage.local.get(INF_RESOLVE_KEY))[INF_RESOLVE_KEY]);
       const started = await informaticaGate.start(msg.lease, documentKey(sender));
-      return started.ok ? {...started, emails} : started;
+      return started.ok ? {...started, emails, resolve: resolved.enabled ? {notes: resolved.notes} : null} : started;
     }},
     'informatica-run-end': {senders: 'content', handle: (msg, sender) => informaticaGate.end(msg.lease, documentKey(sender))},
     'get-effective': {senders: 'content', async handle() {
@@ -346,7 +347,7 @@ export function createMiloBackground({chrome, origins, features = [], now = () =
     } else {
       const roles = senderRoles(sender);
       const infRun = message.feature === MILO && message.type.startsWith('informatica-run-');
-      const allowed = infRun ? ['production'] : feature ? FEATURES[feature].origins : ['production', 'test'];
+      const allowed = infRun ? FEATURES['informatica-button'].origins : feature ? FEATURES[feature].origins : ['production', 'test'];
       if (infRun && sender.documentLifecycle !== undefined && sender.documentLifecycle !== 'active') return {reject:'inactive-document'};
       if (!roles || [...roles].some(r => !allowed.includes(r))) return {reject: 'wrong-origin'};
       if (feature && sender.documentLifecycle !== undefined && sender.documentLifecycle !== 'active') return {reject: 'inactive-document'};

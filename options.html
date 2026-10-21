@@ -7,7 +7,7 @@
   :root { color-scheme: dark; }
   body { font: 14px/1.45 system-ui, sans-serif; max-width: 46rem; margin: 2rem auto; padding: 0 1rem; color: #e4e4ea; background: #15161a; }
   a { color: #8ab4f8; }
-  button, textarea { background: #23252b; color: #e4e4ea; border: 1px solid #3a3d46; border-radius: 4px; }
+  button, textarea, input[type=text] { background: #23252b; color: #e4e4ea; border: 1px solid #3a3d46; border-radius: 4px; }
   button { padding: .3rem .7rem; cursor: pointer; }
   button:hover { background: #2d3038; }
   h1 { font-size: 1.4rem; }
@@ -37,6 +37,8 @@
   .rules-actions .spacer { flex: 1; }
   .list-editor { margin-top: 1.5rem; }
   .list-editor h2 { font-size: 1.1rem; margin: 0 0 .3rem; }
+  .list-editor input[type=text] { display: block; width: 100%; box-sizing: border-box; font: inherit; padding: .4rem .5rem; margin: .4rem 0; }
+  #inf-resolve label { font-weight: normal; }
   .list-editor textarea { display: block; width: 100%; box-sizing: border-box; font: inherit; padding: .4rem .5rem; }
 </style>
 </head>
@@ -75,6 +77,14 @@ alone never activates them.</p>
   <textarea id="inf-recipients-text" rows="4" placeholder="name@example.com" spellcheck="false"></textarea>
   <p id="inf-recipients-error" class="action-error" role="alert" hidden></p>
   <div class="rules-actions"><button type="button" id="inf-recipients-save">Save</button><span id="inf-recipients-state" class="hint"></span></div>
+</section>
+<section class="list-editor" id="inf-resolve" aria-labelledby="inf-resolve-title">
+  <h2 id="inf-resolve-title">Informatica button: resolve the ticket</h2>
+  <label><input type="checkbox" id="inf-resolve-enabled"> After the note is saved, also set State to Resolved, Resolution code to "Solution provided" and Resolution notes to the text below.</label>
+  <input type="text" id="inf-resolve-notes" maxlength="200" placeholder="Resolution notes" spellcheck="false">
+  <p class="hint">Off by default. Runs only after the note Save is confirmed, only on an open Informatica incident, once (no retry), and is verified by reading the record back. A dry run never resolves. Closing a ticket can notify the customer and stop SLAs. Stored in this browser profile only.</p>
+  <p id="inf-resolve-error" class="action-error" role="alert" hidden></p>
+  <div class="rules-actions"><button type="button" id="inf-resolve-save">Save</button><span id="inf-resolve-state" class="hint"></span></div>
 </section>
 <script type="module" src="options.js"></script>
 </body>

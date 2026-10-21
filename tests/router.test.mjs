@@ -55,11 +55,11 @@ test('foreign senders (other extension / no id) are rejected', async () => {
   assert.deepEqual(env.f.kb.calls.filter(c => c[0] === 'ping'), []);
 });
 
-test('sender origin policy: production for alerts/informatica/kb, test host only for timecard', async () => {
+test('sender origin policy: production for alerts/kb, test host also for informatica and timecard', async () => {
   const env = setup();
   const cases = [
     ['critical-alert', PROD, true], ['critical-alert', TEST, false], ['interaction-alert', TEST, false],
-    ['informatica-button', TEST, false], ['kb-dark', TEST, false], ['kb-dark', PROD, true],
+    ['informatica-button', TEST, true], ['kb-dark', TEST, false], ['kb-dark', PROD, true],
     ['timecard', TEST, true], ['timecard', PROD, true],
     ['kb-dark', 'https://evil.service-now.com', false], ['timecard', 'http://prod.service-now.com', false],
     ['kb-dark', 'https://prod.service-now.com.evil.example', false]
@@ -151,7 +151,7 @@ test('get-effective returns the content-facing record (no raw preferences) for a
     assert.equal(response.effective.features['kb-dark'].enabled, false);
     assert.equal(response.effective.features['critical-alert'].enabled, true);
     assert.equal(response.effective.features['interaction-alert'].enabled, false);
-    assert.deepEqual(response.effective.origins[TEST], ['timecard']);
+    assert.deepEqual(response.effective.origins[TEST], ['informatica-button', 'timecard']);
     assert.equal('preferences' in response.effective, false);
   }
 });
