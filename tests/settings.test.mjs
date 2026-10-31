@@ -7,18 +7,18 @@ import {
 } from '../shared/features.mjs';
 import {createFakeStorage, ORIGINS, PROD, TEST} from './helpers/fake-chrome.mjs';
 
-const ALL = ['critical-alert', 'interaction-alert', 'informatica-button', 'kb-dark', 'timecard'];
+const ALL = ['critical-alert', 'interaction-alert', 'informatica-button', 'monitoring-routing', 'inbox-overlay', 'kb-dark', 'timecard'];
 const READY = {schema: 1, state: 'ready', method: 'notify-current', decidedAt: 1, completedAt: 1};
 
-test('catalog: exactly the five known features, labels, origin roles and preserved alert keys', () => {
+test('catalog: exactly the seven known features, labels, origin roles and preserved alert keys', () => {
   assert.deepEqual(FEATURE_NAMES, ALL);
   assert.equal(FEATURES.timecard.label, 'Timecard overlay (native-form compatibility always on)');
-  for (const name of ALL) assert.deepEqual(FEATURES[name].origins, ['timecard', 'informatica-button'].includes(name) ? ['production', 'test'] : ['production']);
+  for (const name of ALL) assert.deepEqual(FEATURES[name].origins, ['timecard', 'informatica-button', 'monitoring-routing', 'inbox-overlay'].includes(name) ? ['production', 'test'] : ['production']);
   assert.equal(FEATURES['critical-alert'].alert.dedupeKey, 'seenMatchesV4');
   assert.equal(FEATURES['interaction-alert'].alert.dedupeKey, 'seenInteractionsV1');
   assert.equal(FEATURES['critical-alert'].alert.migrationKey, 'crit.migrationV1');
   assert.equal(FEATURES['interaction-alert'].alert.migrationKey, 'ix.migrationV1');
-  for (const name of ['informatica-button', 'kb-dark', 'timecard']) assert.equal(FEATURES[name].alert, undefined);
+  for (const name of ['informatica-button', 'monitoring-routing', 'inbox-overlay', 'kb-dark', 'timecard']) assert.equal(FEATURES[name].alert, undefined);
   assert.equal(PREFERENCES_KEY, 'features');
   assert.ok(Object.isFrozen(FEATURES) && Object.isFrozen(FEATURES['critical-alert'].alert));
 });
@@ -67,7 +67,7 @@ test('effective = preference AND completed migration for alerts; preference alon
   assert.equal(pending['critical-alert'].enabled, false);
   assert.match(pending['critical-alert'].reason, /pending-migration/);
   assert.equal(pending['interaction-alert'].enabled, false);
-  for (const n of ['informatica-button', 'kb-dark', 'timecard']) assert.equal(pending[n].enabled, true);
+  for (const n of ['informatica-button', 'monitoring-routing', 'inbox-overlay', 'kb-dark', 'timecard']) assert.equal(pending[n].enabled, true);
   const ready = computeEffective(prefs, {'critical-alert': parseMigration(READY), 'interaction-alert': parseMigration(READY)});
   assert.equal(ready['critical-alert'].enabled, true);
   const off = computeEffective({...prefs, 'critical-alert': false}, {'critical-alert': parseMigration(READY)});
@@ -79,12 +79,12 @@ test('effective = preference AND completed migration for alerts; preference alon
   assert.equal(seedingOff['critical-alert'].seedOnly, false);
 });
 
-test('effective record carries per-origin scope: production all five, test host informatica + timecard', () => {
+test('effective record carries per-origin scope: production all seven, test host informatica + monitoring-routing + Inbox + timecard', () => {
   const effective = computeEffective(parsePreferences(undefined).preferences, {});
   const record = buildEffectiveRecord({effective, origins: ORIGINS, epoch: 'e', rev: 3, at: 5});
   assert.equal(record.schema, 1);
   assert.deepEqual(record.origins[PROD], ALL);
-  assert.deepEqual(record.origins[TEST], ['informatica-button', 'timecard']);
+  assert.deepEqual(record.origins[TEST], ['informatica-button', 'monitoring-routing', 'inbox-overlay', 'timecard']);
   assert.equal(record.rev, 3);
   assert.equal(JSON.stringify(record).includes('"features":{"critical-alert":{"enabled":false'), true);
   assert.equal('preferences' in record, false, 'raw preferences are never part of the content-facing record');
@@ -102,11 +102,11 @@ test('store.readState reads all settings keys in ONE get; storage failure throws
   await assert.rejects(store.readState(), /boom/);
 });
 
-test('setPreference: validates, writes all five explicit booleans, malformed siblings become explicit false', async () => {
+test('setPreference: validates, writes all seven explicit booleans, malformed siblings become explicit false', async () => {
   const s = createFakeStorage({features: {'kb-dark': 'garbage', timecard: false}});
   const store = createSettingsStore({storage: s.local});
   await store.setPreference('informatica-button', false);
-  assert.deepEqual(s.dump().features, {'critical-alert': true, 'interaction-alert': true, 'informatica-button': false, 'kb-dark': false, timecard: false});
+  assert.deepEqual(s.dump().features, {'critical-alert': true, 'interaction-alert': true, 'informatica-button': false, 'monitoring-routing': true, 'inbox-overlay': true, 'kb-dark': false, timecard: false});
   await assert.rejects(store.setPreference('evil', true), /unknown feature/);
   await assert.rejects(store.setPreference('kb-dark', 'true'), /boolean/);
   s.ctl.failGet = true;
@@ -135,7 +135,7 @@ test('rapid setPreference toggles are serialized: last write wins, no lost updat
     ops.push(store.setPreference('timecard', i % 2 === 0));
   }
   await Promise.all(ops);
-  assert.deepEqual(s.dump().features, {'critical-alert': true, 'interaction-alert': true, 'informatica-button': true, 'kb-dark': true, timecard: false});
+  assert.deepEqual(s.dump().features, {'critical-alert': true, 'interaction-alert': true, 'informatica-button': true, 'monitoring-routing': true, 'inbox-overlay': true, 'kb-dark': true, timecard: false});
 });
 
 test('feature catalog: alert config has only the fields in use', async () => {

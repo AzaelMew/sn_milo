@@ -7,6 +7,57 @@ lifecycle) plus the migrated **Informatica button** (Task 4, content scripts onl
 **KB dark mode** (Task 5, attribute-gated declarative CSS) and both **alerts** (Task 6, worker module + MAIN bridge +
 ISOLATED poller each) and the **timecard overlay** (Task 7, MAIN-world content scripts + an options-status worker module).
 
+## Floating native Inbox (1.8.0; red dot 1.9.0; frame fix 1.9.1; presence bubble 1.10.0)
+
+The **Floating native Inbox** toggle enables a bottom-right, initially collapsed Inbox on both configured
+instances, including Platform Analytics and Classic pages. When the feature starts on page load it eagerly preloads the current
+instance's `/now/cwf/agent/inbox` in a same-origin iframe in the background; the first click reuses that frame. Collapse hides the panel but keeps that native workspace
+mounted, retaining its session/subscription. Disable in options closes it and releases the frame and timers;
+re-enable preloads again, still collapsed. Same-instance script reinjection retains the mounted workspace.
+Native status and alert-settings popovers, which the page hoists to body-level panels, are raised above the embedded
+Inbox only when they reference components inside it; other shell popups stay hidden.
+
+Only the visible native `sn-agent-inbox` branch is shown, including its native presence/status and alert controls.
+Open shadow roots are traversed; a visible native Inbox is preferred, and if none renders (narrow layouts report it 0x0/hidden) the last native candidate is forced visible in place (never cloned). Presentation changes stay inside the iframe;
+native nodes are not moved and requests, assignment, availability and item handling are not reimplemented.
+The launcher never changes availability or accepts work automatically. The native Inbox link opens separately
+with `noopener`; it remains available when embedding, authentication or native rendering fails (30-second loading
+fallback, with recovery if rendering finishes later). Loading another workspace consumes native workspace resources
+from page load, before any expansion (the iframe may measure 0 wide while the panel is collapsed, so isolation uses its hidden fallback and recovers after opening); collapse is not an unload or a promise that the browser will never throttle its background work.
+
+**Red dot (1.9.0).** When the selected native Inbox's own shadow root reports `N work item(s) in Inbox` in its
+`.test-announce-work-items` live region (read-only; strict match), N > 0 shows a small red dot on the launcher's
+upper-right and sets the button's accessible name to e.g. `Inbox, 2 work items`. 0, missing or malformed text, reload,
+removal, failure and disable hide it. A MutationObserver on that shadow root (reconnected when native replaces the Inbox)
+updates it immediately; the 1s scan is a backstop. The dot is out of flow, so the pill's bounds and visible text never
+change. It adds no sound, notification, storage or requests, and does not touch audio settings; any incoming-work
+sound is the native site's own and is not verified here.
+
+**Presence bubble (1.10.0).** A separate 40px round button sits immediately left of the Inbox pill (also fixed; the pill is
+unchanged). It mirrors the selected Inbox's own presence button (`sn-agent-presence-state` > `button#presenceBar`, label
+`Agent presence state: X`, which must agree with its `.status` text): green Available/Online, red Offline, yellow
+Busy/Away/WrapUp, grey for anything unknown, missing, contradictory, reloaded or removed (never red/green by default).
+The tooltip and accessible name carry the native status name; observers on the native roots update it immediately, with
+the 1s scan as a backstop. Clicking the bubble opens a compact menu above it with the real native choices, read from the
+selected Inbox's own `sn-presence-popover-content` shadow list (`ul[role=listbox][aria-label="Status Options"]`, selected
+`li` marked); foreign or other popups are ignored. Opening only reads (it does not open the native dropdown or the panel).
+Only an explicit click on a menu entry calls `.click()` once on the matching native option (never for the current one);
+the bubble does not change optimistically and shows whatever the native control reports afterwards. Escape, outside click
+and the bubble close the menu without effect. No storage, requests, synthetic events, audio or cycling.
+
+**Middle-click/navigation fix (1.9.1).** The native Inbox document carries an inline frame-buster that, for any embedded
+frame whose id is not `testFrame`, calls the parent shell's route function and can send the whole top window to the Inbox
+(symptom: opening a case in a new tab ended on the Inbox). The overlay frame therefore uses the native exemption
+`id="testFrame"`, set before `src`; its identity is kept by `name="sn-milo-native-inbox"` and a `data-sn-milo-native-inbox`
+attribute. Nothing in the parent page, its links or its routing is overridden or intercepted. A regression test executes a
+markup-derived copy of the guard against the frame the script really creates (route function not called, top location
+unchanged) with an ordinary frame as positive control.
+
+`tests/inbox-overlay.test.mjs` runs the actual content script in a VM DOM fixture, covering eager preload,
+collapse retention, shadow-root isolation/re-rendering, lifecycle and failure recovery. These local tests do not
+verify live work-item acceptance, assignment or availability changes. Browser installation/reload is a separate,
+explicit action; unit tests do not attach to a browser.
+
 ## Layout
 
 ```
@@ -36,7 +87,7 @@ tests/browser/                        disposable-browser tests (explicit, never 
 | `npm run generate:check` | recompute expected artifacts; fail on missing/stale/different output; never writes |
 | `npm run gate:kb` / `gate:kb:check` | regenerate / check `features/kb-dark/dark.css` from the original stylesheet (also asserted by `test:unit`) |
 | `npm test` | `generate:check` (fails with "Run `npm run generate`" when artifacts are missing/stale), then `test:unit` (no browser, no network) |
-| `npm run test:unit` | generator, no-network, settings, migration, router, lifecycle, content-lifecycle, manifest-policy, options tests, `features/informatica-button/test.cjs` (migrated original bridge tests + bridge lifecycle) and `tests/informatica.test.mjs` (real settings path + mocked workflow/cancellation), `features/{critical,interaction}-alert/test.cjs`, `tests/critical-alert.test.mjs`, `tests/alerts.test.mjs` (see *Alerts*) |
+| `npm run test:unit` | generator, no-network, settings, migration, router, lifecycle, content-lifecycle, manifest-policy, options tests, `features/informatica-button/test.cjs` (migrated original bridge tests + bridge lifecycle) and `tests/informatica.test.mjs` (real settings path + mocked workflow/cancellation), `tests/monitoring-routing.test.mjs`, `features/{critical,interaction}-alert/test.cjs`, `tests/critical-alert.test.mjs`, `tests/alerts.test.mjs` (see *Alerts*) |
 | `npm run test:browser` | disposable Vivaldi: skeleton load check, settings foundation (options page, worker status, controller handshake on production + test fixtures, live toggles without reload, snapshot import + confirmed fallback via the options page), content isolation (storage denied to content scripts; extension reload → new isolated world, old controller retires by liveness), Informatica button on a production-origin fixture (mounts, removed on disable via options + storage, exactly one on re-enable, no reload; never clicked), KB baseline (7 checks), KB dark original-vs-Milo comparison (see *KB dark mode*; screenshots under `$TMPDIR/sn_milo-kb-dark-shots-*`) and the alerts (see *Alerts*). Ports: `SN_MILO_BROWSER_PORT` (default 9461), `SN_MILO_SETTINGS_PORT` (9463), `SN_MILO_ISOLATION_PORT` (9465), `SN_MILO_INFORMATICA_PORT` (9467), `SN_KB_PORT` (9462), `SN_MILO_KB_ORIG_PORT` (9469), `SN_MILO_KB_PORT` (9471), `SN_MILO_KB_RESTART_PORT` (9473), `SN_MILO_ALERTS_PORT` (9475), `SN_MILO_TIMECARD_PORT` (9477), `SN_MILO_APPLY_UPDATE_PORT` (9479, runs the real `scripts/apply-update.mjs`) |
 
 ## Local private packaging and module validation
@@ -224,6 +275,39 @@ Save, so dry run is *not* write-free; never use it on production as a test.
 - **Verification.** Workflow behaviour (Save/Post) is test-covered with mocks only, not live-verified. The browser
   test serves a fixture record for the production origin, never clicks the button and asserts that no API or
   non-GET request was made.
+
+## Monitoring routing buttons
+
+`features/monitoring-routing/content.js` — one MAIN-world script (`document_idle`, all frames, only
+`/sn_customerservice_case.do*`, production and test origins), i.e. the classic case form inside the `gsft_main` frame.
+Inert until `window.__snMiloMainSettings` reports `monitoring-routing` enabled; disable removes the buttons and cancels a
+run at its next checkpoint.
+
+When the form's Channel is `monitoring` it adds routing buttons (**Windows**, **Linux**, **MSSQL**) in the empty strip right
+of the Channel row (absolutely positioned: no layout space; two per row). A click fills the form through `g_form`:
+Type = Incident, Category/Subcategory per button (Server / Windows Operating system, Server / Non-Windows,
+Application platform / Database), Assignment group = Monitoring, Assigned to = the signed-in user (`g_user`, so no person
+is named in source), and last Contract Invoice Rate (`u_contract_invoice_rate`). Type and Category reload the dependent
+choice lists, so the script waits for each list to change before choosing from it (and redoes the write once if the list
+never reloaded).
+
+**Contract Invoice Rate goes last, so there is normally no wait.** The system fills it ~0.25 s after the Subcategory
+change when exactly one rate fits; the group/assignee writes take that time. If it is still empty, the script waits out
+the rest of 0.5 s (counted from the Subcategory write) and then, for Windows and MSSQL, sets it to the active rate of that
+name in the case's own `sys_domain` (rates are per customer; for MSSQL also under the "SQL Database Monitoring and
+Management" contract; read-only GETs; never overwrites a filled value; without a configured contract name exactly one
+match is required). Linux has no rate rule.
+
+**A rate that cannot be set does not stop the run.** If the rate lookup finds nothing (or several), fails, or the button
+has no rate rule, every other field is still filled and checked, the rate stays blank, and the form is **not saved**: the
+button shows `Filled, not saved: Contract Invoice Rate left blank (<reason>)`. This is the only allowed gap; any other
+mismatch or empty mandatory field still bails as below.
+
+**Double check, then save.** After filling, it re-reads every field independently (what the form displays plus
+`g_form`, twice with a pause, plus `g_form.getMissingFields()` and, for MSSQL, the derived Contract). Only if all are
+correct (and the rate is set) does it click the form's own `#sysverb_update_and_stay` Save button, once, never retried; any mismatch bails
+with `Failed: not saved, check the form: ...` on the button and saves nothing. `localStorage.snMrNoSave = "1"` fills and
+verifies but skips the save (for testing on live records). `tests/monitoring-routing.test.mjs` covers it with a stubbed form.
 
 ## KB dark mode
 

@@ -25,7 +25,7 @@ test('matchesPath mirrors Chrome match-pattern paths (path+query, * glob, no fra
 test('production case page: shared first, every production feature, timecard overlay, never the native-form entry', () => {
   const plan = planReinjection([{id: 1, url: `${P}/now/cwf/agent/record/x/1`}], {origins: ORIGINS});
   assert.equal(plan.length, 1);
-  assert.deepEqual(ids(plan[0]), ['settings-controller', 'main-settings', 'informatica-bridge', 'informatica-button',
+  assert.deepEqual(ids(plan[0]), ['settings-controller', 'main-settings', 'informatica-bridge', 'informatica-button', 'inbox-overlay',
     'critical-alert-bridge', 'critical-alert-poller', 'interaction-alert-bridge', 'interaction-alert-poller', 'timecard-overlay']);
   const byId = Object.fromEntries(plan[0].steps.map(s => [s.id, s]));
   assert.deepEqual([byId['settings-controller'].world, byId['settings-controller'].allFrames, byId['settings-controller'].files], ['ISOLATED', true, ['shared/controller.js']]);
@@ -37,10 +37,10 @@ test('production case page: shared first, every production feature, timecard ove
   assert.ok(!ids(plan[0]).includes('kb-dark-toggle'));
 });
 
-test('test host receives ONLY timecard overlay, informatica button + shared', () => {
+test('test host receives timecard overlay, informatica button, Inbox + shared on workspace pages', () => {
   const [plan] = planReinjection([{id: 2, url: `${T}/now/cwf/agent/record/x/1`}], {origins: ORIGINS});
-  assert.deepEqual(ids(plan), ['settings-controller', 'main-settings', 'informatica-bridge', 'informatica-button', 'timecard-overlay']);
-  for (const s of plan.steps) assert.ok(['shared', 'timecard', 'informatica-button'].includes(s.feature));
+  assert.deepEqual(ids(plan), ['settings-controller', 'main-settings', 'informatica-bridge', 'informatica-button', 'inbox-overlay', 'timecard-overlay']);
+  for (const s of plan.steps) assert.ok(['shared', 'timecard', 'informatica-button', 'inbox-overlay'].includes(s.feature));
 });
 
 test('/kb and /kb?* get the KB toggle (JS); gated css even while disabled; other kb-like paths do not', () => {
@@ -119,7 +119,7 @@ test('reinjectOpenTabs: exact targets, per-step injection, no other chrome API',
   assert.deepEqual(ctl, {target: {tabId: 1, documentIds: ['doc-1']}, files: ['shared/controller.js'], world: 'ISOLATED'});
   const bridge = exec.find(i => i.files[0] === 'features/informatica-button/page.js');
   assert.deepEqual(bridge, {target: {tabId: 1, documentIds: ['doc-1']}, files: ['features/informatica-button/page.js'], world: 'MAIN'});
-  assert.equal(exec.filter(i => i.target.tabId === 2).length, 5);
+  assert.equal(exec.filter(i => i.target.tabId === 2).length, 6);
   assert.deepEqual(calls.filter(c => c[0] === 'css').map(c => c[1]), [{target: {tabId: 1, documentIds: ['doc-1']}, files: ['features/kb-dark/dark.css']}]);
   assert.deepEqual(summary.tabs.map(t => [t.tabId, t.ok]), [[1, true], [2, true]]);
   assert.equal(summary.failed, 0);

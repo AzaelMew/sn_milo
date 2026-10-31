@@ -3,7 +3,7 @@
 // exact agreement. Entry order is manifest order (Chromium injects same-timing entries in manifest order).
 // Rules enforced by validatePolicy():
 //   - feature is a known feature or 'shared' (settings infrastructure with no feature behaviour);
-//   - origins ⊆ the feature's allowed roles (FEATURES[*].origins): only timecard, informatica-button (and shared) may use 'test';
+//   - origins ⊆ the feature's allowed roles (FEATURES[*].origins): timecard, informatica-button, monitoring-routing, inbox-overlay (and shared) may use 'test';
 //   - kb-dark paths are exactly ['/kb', '/kb?*'] (never '/kb*', which also matches /kb-other and /kb_view.do);
 //   - world ISOLATED|MAIN, run_at document_start|document_end|document_idle, boolean all_frames;
 //   - js/css are repo-relative extension files; MAIN entries carry no css;
@@ -35,6 +35,13 @@ export const SCRIPT_POLICY = Object.freeze([
     run_at: 'document_start', all_frames: false, js: ['features/informatica-button/page.js']},
   {id: 'informatica-button', feature: 'informatica-button', origins: ['production', 'test'], paths: ['/*'], world: 'ISOLATED',
     run_at: 'document_idle', all_frames: false, js: ['features/informatica-button/content.js']},
+  // Monitoring routing buttons: MAIN world, case form frame only (gsft_main loads /sn_customerservice_case.do), every
+  // frame so the nested form document is covered; inert until the relayed effective state enables it.
+  {id: 'monitoring-routing', feature: 'monitoring-routing', origins: ['production', 'test'], paths: ['/sn_customerservice_case.do*'], world: 'MAIN',
+    run_at: 'document_idle', all_frames: true, js: ['features/monitoring-routing/content.js']},
+  // Native Inbox is owned by the top document; its lazy same-origin frame must never launch another overlay.
+  {id: 'inbox-overlay', feature: 'inbox-overlay', origins: ['production', 'test'], paths: ['/*'], world: 'ISOLATED',
+    run_at: 'document_idle', all_frames: false, js: ['features/inbox-overlay/content.js']},
   // KB dark mode: the original's single declarative CSS entry (exact /kb + /kb?*, document_start, top frame), now
   // attribute-gated, plus the ISOLATED toggle that owns the off attribute (after the controller: same world/timing ⇒
   // manifest order).

@@ -151,7 +151,7 @@ test('get-effective returns the content-facing record (no raw preferences) for a
     assert.equal(response.effective.features['kb-dark'].enabled, false);
     assert.equal(response.effective.features['critical-alert'].enabled, true);
     assert.equal(response.effective.features['interaction-alert'].enabled, false);
-    assert.deepEqual(response.effective.origins[TEST], ['informatica-button', 'timecard']);
+    assert.deepEqual(response.effective.origins[TEST], ['informatica-button', 'monitoring-routing', 'inbox-overlay', 'timecard']);
     assert.equal('preferences' in response.effective, false);
   }
 });

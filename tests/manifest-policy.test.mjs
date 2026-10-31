@@ -165,8 +165,8 @@ test('timecard entries have the expected manifest shape (both origins, order, wo
   assert.ok(idx('main-settings') < idx('timecard-native'));
 });
 
-test('timecard and informatica are the only features on the test origin; generated manifest, grants and config.js agree on both origins', () => {
-  for (const e of SCRIPT_POLICY) if (e.origins.includes('test')) assert.ok(['timecard', 'informatica-button', 'shared'].includes(e.feature), e.id);
+test('timecard, informatica, monitoring-routing and Inbox are the only features on the test origin; generated manifest, grants and config.js agree on both origins', () => {
+  for (const e of SCRIPT_POLICY) if (e.origins.includes('test')) assert.ok(['timecard', 'informatica-button', 'monitoring-routing', 'inbox-overlay', 'shared'].includes(e.feature), e.id);
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sn_milo-tc-'));
   try {
     fs.copyFileSync(path.join(repo, 'manifest.template.json'), path.join(tmp, 'manifest.template.json'));
@@ -182,6 +182,6 @@ test('timecard and informatica are the only features on the test origin; generat
     assert.equal(tc.length, 2);
     assert.deepEqual(tc[0].matches, [`${TEST}/*`, `${PROD}/*`]);
     assert.deepEqual(tc[1].matches, [`${TEST}/task_time_worked.do*`, `${PROD}/task_time_worked.do*`]);
-    for (const cs of manifest.content_scripts) if (cs.matches.some(m => m.startsWith(TEST))) assert.ok(cs.js.every(f => f.startsWith('features/timecard/') || f.startsWith('features/informatica-button/') || f.startsWith('shared/')), JSON.stringify(cs.js));
+    for (const cs of manifest.content_scripts) if (cs.matches.some(m => m.startsWith(TEST))) assert.ok(cs.js.every(f => f.startsWith('features/timecard/') || f.startsWith('features/informatica-button/') || f.startsWith('features/monitoring-routing/') || f.startsWith('features/inbox-overlay/') || f.startsWith('shared/')), JSON.stringify(cs.js));
   } finally { fs.rmSync(tmp, {recursive: true, force: true}); }
 });

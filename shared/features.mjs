@@ -31,6 +31,8 @@ export const FEATURES = freezeDeep({
       entryPattern: /^[0-9a-f]{32}$/i}
   },
   'informatica-button': {label: 'Informatica button', origins: ['production', 'test']},
+  'monitoring-routing': {label: 'Monitoring routing buttons (Windows / Linux)', origins: ['production', 'test']},
+  'inbox-overlay': {label: 'Floating native Inbox', origins: ['production', 'test']},
   'kb-dark': {label: 'KB dark mode', origins: ['production']},
   timecard: {label: 'Timecard overlay (native-form compatibility always on)', origins: ['production', 'test']}
 });
