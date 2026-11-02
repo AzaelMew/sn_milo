@@ -8,15 +8,15 @@ import {fileURLToPath} from 'node:url';
 
 const SRC = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'features/monitoring-routing/content.js'), 'utf8');
 const SYS = n => String(n).repeat(32);
-const GROUP = SYS(1), ME = SYS(2), RATE_ID = SYS(4), DOMAIN = SYS(5), CASE = SYS(6);
+const TPL = SYS(3), GROUP = SYS(1), ME = SYS(2), RATE_ID = SYS(4), DOMAIN = SYS(5), CASE = SYS(6);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // Minimal DOM: selects with options, a Channel row, and a body that collects the inserted bar.
-function makeEnv({enabled = true, noSettings = false, groupRows = [{sys_id: GROUP, name: 'Monitoring'}], channel = 'monitoring', subs = ['Windows Operating system', 'Non-Windows', 'Database'], fetchFails = false, autoFill = false, dropFirstCategoryReload = false, saveUnloads = true, missing = [], noSave = false, resetAssignee = false, wrongContract = false, rateRows = [{sys_id: RATE_ID}]} = {}) {
+function makeEnv({enabled = true, noSettings = false, groupRows = [{sys_id: GROUP, name: 'Monitoring'}], channel = 'monitoring', subs = ['Windows Operating system', 'Non-Windows', 'Database', 'Server capacity change'], fetchFails = false, autoFill = false, dropFirstCategoryReload = false, saveUnloads = true, missing = [], noSave = false, resetAssignee = false, wrongContract = false, rateRows = [{sys_id: RATE_ID}], templateRows = [{sys_id: TPL, name: 'Server capacity change'}], templateFills = true} = {}) {
   const log = [];
   const values = {contact_type: channel, u_type: 'service_request', category: '', subcategory: '', assignment_group: '', assigned_to: '', u_contract_invoice_rate: ''};
   const lists = {
-    u_type: [['service_request', 'Service Request'], ['incident', 'Incident']],
+    u_type: [['service_request', 'Service Request'], ['incident', 'Incident'], ['change', 'Change']],
     category: [['', '-- None --'], ['37', 'IT Infrastructure / Server']], // Service Request list: values differ from the Incident list
     subcategory: [['', '-- None --']]
   };
@@ -36,9 +36,10 @@ function makeEnv({enabled = true, noSettings = false, groupRows = [{sys_id: GROU
       log.push([f, v, display]);
       values[f] = v;
       if (display) displays[f] = display;
-      if (f === 'u_type') { values.category = ''; reload('category', [['91', 'IT Infrastructure / Application platform'], ['92', 'IT Infrastructure / Server']]); }
+      if (f === 'u_type') { values.category = ''; reload('category', v === 'change' ? [['26', 'Standard'], ['16', 'Normal']] : [['91', 'IT Infrastructure / Application platform'], ['92', 'IT Infrastructure / Server']]); }
       if (f === 'category' && v && dropFirstCategoryReload && !g_form.dropped) g_form.dropped = true; // change handler missed
       else if (f === 'category') { values.subcategory = ''; reload('subcategory', subs.map((t, i) => [`s${i}`, t])); }
+      if (f === 'u_change_template' && v && templateFills) setTimeout(() => { values.subcategory = `s${subs.indexOf('Server capacity change')}`; }, 40); // the form fills the Subcategory from the template
       if (f === 'subcategory' && autoFill) setTimeout(() => { values.u_contract_invoice_rate = SYS(7); displays.u_contract_invoice_rate = 'INFRA/HÄIRIÖ/Käyttöjärjestelmä Windows OS'; }, 100);
       if (f === 'u_contract_invoice_rate') { const hit = rateRows.find(x => (x.sys_id?.value ?? x.sys_id) === v); lastContract = hit?.contract?.display_value || 'Some contract'; }
       if (f === 'assignment_group') values.assigned_to = ''; // the real form clears the assignee
@@ -73,6 +74,7 @@ function makeEnv({enabled = true, noSettings = false, groupRows = [{sys_id: GROU
       fetched.push({url, init});
       if (fetchFails) return {ok: false, status: 500};
       if (url.includes(`/sn_customerservice_case/${CASE}`)) return {ok: true, json: async () => ({result: {sys_domain: DOMAIN}})};
+      if (url.includes('/api/now/table/std_change_record_producer?')) return {ok: true, json: async () => ({result: templateRows})};
       if (url.includes('x_tifo_invoicing_invoice_rate')) return {ok: true, json: async () => ({result: rateRows})};
       return {ok: true, json: async () => ({result: groupRows})};
     }
@@ -149,7 +151,7 @@ test('buttons are anchored absolutely to the Channel row (no layout space), two 
 test('buttons appear only when Channel is Monitoring and go away when it changes or the feature is disabled', () => {
   const env = makeEnv();
   env.tick();
-  assert.deepEqual(env.bar().children.map(b => b.dataset.name), ['Windows', 'Linux', 'MSSQL']);
+  assert.deepEqual(env.bar().children.map(b => b.dataset.name), ['Windows', 'Linux', 'MSSQL', 'Disk']);
   env.setChannel('email'); env.tick();
   assert.equal(env.bar(), null);
   env.setChannel('monitoring'); env.tick();
@@ -284,7 +286,7 @@ test('MSSQL: Application platform / Database, and the rate under the SQL contrac
     {sys_id: {value: RATE_ID, display_value: RATE_ID}, contract: {value: SYS(3), display_value: 'SQL Database Monitoring and Management'}}];
   const env = makeEnv({rateRows});
   env.tick();
-  assert.deepEqual(env.bar().children.map(b => b.dataset.name), ['Windows', 'Linux', 'MSSQL']);
+  assert.deepEqual(env.bar().children.map(b => b.dataset.name), ['Windows', 'Linux', 'MSSQL', 'Disk']);
   env.bar().querySelector('[data-name="MSSQL"]').listeners.click();
   await until(() => env.window.__snMonitoringRouting.lastRun);
   assert.equal(env.window.__snMonitoringRouting.lastRun, 'Saved');
@@ -314,4 +316,52 @@ test('MSSQL leaves the rate blank and does not save when no rate is under the SQ
   assert.match(env.window.__snMonitoringRouting.lastRun, /^Filled, not saved: Contract Invoice Rate left blank \(expected at least one active "INFRA\/HÄIRIÖ\/Tietokanta" rate under "SQL Database/);
   assert.equal(env.saves.length, 0);
   assert.equal(env.log.some(e => e[0] === 'u_contract_invoice_rate'), false);
+});
+
+const DISK_WRITES = ['u_type', 'category', 'u_change_template', 'assignment_group', 'assigned_to', 'u_contract_invoice_rate'];
+const DISK_RATE = 'INFRA/VAKIOMUUTOS/Kapasiteetin lisäys/poisto';
+
+test('Disk: Change / Standard / Change Template (the form fills the Subcategory), first of several same-named rates, group, assignee', async () => {
+  const rateRows = [{sys_id: {value: RATE_ID}, contract: {display_value: 'Server Capacity Service'}}, {sys_id: {value: SYS(8)}, contract: {display_value: 'Server Capacity Service'}}];
+  const env = await run({rateRows}, 'Disk');
+  assert.equal(env.window.__snMonitoringRouting.lastRun, 'Saved');
+  assert.equal(env.saves.length, 1);
+  assert.deepEqual(env.log.map(e => e[0]), DISK_WRITES, 'Subcategory is not written by us when the template fills it');
+  assert.equal(env.values.u_type, 'change');
+  assert.equal(env.values.category, '26');
+  assert.deepEqual(env.log.find(e => e[0] === 'u_change_template'), ['u_change_template', TPL, 'Server capacity change']);
+  assert.equal(env.selects['sn_customerservice_case.subcategory'].options.find(o => o.value === env.values.subcategory).text, 'Server capacity change');
+  assert.deepEqual(env.log.find(e => e[0] === 'u_contract_invoice_rate'), ['u_contract_invoice_rate', RATE_ID, DISK_RATE]);
+  assert.match(decodeURIComponent(env.fetched.find(f => f.url.includes('std_change_record_producer')).url), /name=Server capacity change\^active=true/);
+  assert.ok(env.fetched.every(f => f.init.method === undefined), 'read-only GETs only');
+});
+
+test('Disk without a Change Template record sets the Subcategory itself', async () => {
+  const env = await run({templateRows: []}, 'Disk');
+  assert.equal(env.window.__snMonitoringRouting.lastRun, 'Saved');
+  assert.deepEqual(env.log.map(e => e[0]), ['u_type', 'category', 'subcategory', 'assignment_group', 'assigned_to', 'u_contract_invoice_rate']);
+  assert.ok(!env.values.u_change_template);
+});
+
+test('Disk sets the Subcategory itself when the form did not fill it after the template', async () => {
+  const env = await run({templateFills: false}, 'Disk');
+  assert.equal(env.window.__snMonitoringRouting.lastRun, 'Saved');
+  assert.deepEqual(env.log.map(e => e[0]), ['u_type', 'category', 'u_change_template', 'subcategory', 'assignment_group', 'assigned_to', 'u_contract_invoice_rate']);
+});
+
+test('Disk: a failed template lookup stops the run (no guess about whether the template exists)', async () => {
+  const env = makeEnv({templateRows: null});
+  env.window.fetch = (orig => async (url, init) => (url.includes('std_change_record_producer') ? {ok: false, status: 500} : orig(url, init)))(env.window.fetch);
+  env.tick();
+  env.bar().querySelector('[data-name="Disk"]').listeners.click();
+  await until(() => env.window.__snMonitoringRouting.lastRun);
+  assert.match(env.window.__snMonitoringRouting.lastRun, /^Failed: change template lookup failed/);
+  assert.equal(env.saves.length, 0);
+});
+
+test('Disk with no rate under the case domain still fills the rest, leaves the rate blank and does not save', async () => {
+  const env = await run({rateRows: []}, 'Disk');
+  assert.match(env.window.__snMonitoringRouting.lastRun, /^Filled, not saved: Contract Invoice Rate left blank \(expected at least one active/);
+  assert.equal(env.saves.length, 0);
+  assert.equal(env.values.assigned_to, ME);
 });

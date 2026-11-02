@@ -1,5 +1,5 @@
 // Monitoring routing buttons — MAIN-world content script (classic IIFE) for the classic case form frame.
-// When the case's Channel is "Monitoring" it shows routing buttons (Windows, Linux, MSSQL; see BUTTONS). A click fills
+// When the case's Channel is "Monitoring" it shows routing buttons (Windows, Linux, MSSQL, Disk; see BUTTONS). A click fills
 // the form, re-reads every field twice to double check, and only if all are correct clicks the form's own Save once;
 // otherwise it bails without saving (localStorage.snMrNoSave = "1" fills and verifies but skips the save, for tests).
 //   Type = Incident, Category/Subcategory per button, Assignment group = Monitoring, Assigned to = the signed-in user
@@ -30,12 +30,18 @@
 	// Contract Invoice Rate: the system normally fills it after the Subcategory change. When it does not, `rate` names
 	// the rate record to put there (display_name, in the case's own domain, active; matching contract name when configured).
 	const RATE = {field: 'u_contract_invoice_rate', table: 'x_tifo_invoicing_invoice_rate', autoFillWaitMs: 500};
-	// `contract` (optional) filters by contract display name; duplicate matching contract names may use either record.
+	// Change Template (Disk): a reference to std_change_record_producer. Setting it makes the form fill the Subcategory itself.
+	const TEMPLATE = {field: 'u_change_template', table: 'std_change_record_producer'};
+	// `type` defaults to TYPE.label. `contract` (optional) filters by contract display name; duplicate matching contract names may
+	// use either record. `firstRate` accepts the first of several same-named rates. `template` (optional): use that Change Template
+	// when it exists (the form then fills `subcategory`), otherwise just choose `subcategory`.
 	const BUTTONS = [
 		{name: 'Windows', category: CATEGORY.label, subcategory: 'Windows Operating system', rate: 'INFRA/HÄIRIÖ/Käyttöjärjestelmä Windows OS'},
 		{name: 'Linux', category: CATEGORY.label, subcategory: 'Non-Windows'},
 		{name: 'MSSQL', category: 'IT Infrastructure / Application platform', subcategory: 'Database', rate: 'INFRA/HÄIRIÖ/Tietokanta',
-			contract: 'SQL Database Monitoring and Management'}
+			contract: 'SQL Database Monitoring and Management'},
+		{name: 'Disk', type: 'Change', category: 'Standard', template: 'Server capacity change', subcategory: 'Server capacity change',
+			rate: 'INFRA/VAKIOMUUTOS/Kapasiteetin lisäys/poisto', firstRate: true}
 	];
 
 	const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -130,7 +136,7 @@
 	}
 
 	// The rate record for THIS case: rates are per customer domain, so match the case's own sys_domain.
-	async function rateId(r, displayName, contractName) {
+	async function rateId(r, displayName, contractName, first) {
 		const caseId = window.g_form.getUniqueValue?.();
 		if (!isId(caseId)) fail('case sys_id not available');
 		const rec = await getJson(r, `/api/now/table/${TABLE}/${caseId}?sysparm_fields=sys_domain&sysparm_exclude_reference_link=true`, 'case domain');
@@ -140,8 +146,16 @@
 		const shown = v => (v && typeof v === 'object' ? v.display_value : v);
 		const match = Array.isArray(rows) ? rows.filter(row => !contractName || shown(row.contract) === contractName) : [];
 		// With an explicit contract name, the user accepts the first match even if distinct contracts share that name.
-		if (!match.length || (!contractName && match.length !== 1) || !isId(field(match[0].sys_id))) fail(`expected ${contractName ? 'at least one' : 'exactly one'} active "${displayName}" rate${contractName ? ` under "${contractName}"` : ''} in the case's domain`);
+		if (!match.length || (!contractName && !first && match.length !== 1) || !isId(field(match[0].sys_id))) fail(`expected ${contractName || first ? 'at least one' : 'exactly one'} active "${displayName}" rate${contractName ? ` under "${contractName}"` : ''} in the case's domain`);
 		return field(match[0].sys_id);
+	}
+
+	// The Change Template record by name (null when none exists; a failed lookup is an error, not "missing").
+	async function templateId(r, name) {
+		const rows = await getJson(r, `/api/now/table/${TEMPLATE.table}?sysparm_limit=5&sysparm_fields=sys_id,name&sysparm_query=${encodeURIComponent(`name=${name}^active=true`)}`, 'change template');
+		if (!Array.isArray(rows)) fail('change template lookup failed');
+		const hit = rows.find(row => isId(row.sys_id));
+		return hit ? hit.sys_id : null;
 	}
 
 	async function setReference(r, field, sysId, display) {
@@ -153,14 +167,28 @@
 	async function fill(r, button) {
 		const user = window.g_user;
 		const me = user?.userID, myName = (user?.getFullName?.() || `${user?.firstName || ''} ${user?.lastName || ''}`).trim();
-		if (!/^[0-9a-f]{32}$/i.test(me || '') || !myName) fail('signed-in user not available');
+		if (!isId(me) || !myName) fail('signed-in user not available');
 		const gidPromise = groupId(r); // independent of the form: resolve while the choice lists reload
 		gidPromise.catch(() => {});
-		const ratePromise = button.rate ? rateId(r, button.rate, button.contract) : null; // only awaited if the system leaves the field empty
+		const ratePromise = button.rate ? rateId(r, button.rate, button.contract, button.firstRate) : null; // only awaited if the system leaves the field empty
 		ratePromise?.catch(() => {});
-		const typeValue = await setChoice(r, TYPE.field, TYPE.label, CATEGORY.field);
+		const typeLabel = button.type || TYPE.label;
+		const templatePromise = button.template ? templateId(r, button.template) : null;
+		templatePromise?.catch(() => {});
+		const typeValue = await setChoice(r, TYPE.field, typeLabel, CATEGORY.field);
 		const categoryValue = await setChoice(r, CATEGORY.field, button.category, 'subcategory');
-		const subValue = await setChoice(r, 'subcategory', button.subcategory);
+		// A Change Template, when it exists, makes the form fill the Subcategory; otherwise (or if the form did not) choose it.
+		let templateSet = null;
+		if (button.template) {
+			const tid = await templatePromise;
+			if (tid) {
+				await setReference(r, TEMPLATE.field, tid, button.template);
+				templateSet = tid;
+				await waitFor(r, () => norm(selectedText('subcategory')) === norm(button.subcategory), 2000, 40);
+			}
+		}
+		if (norm(selectedText('subcategory')) !== norm(button.subcategory)) await setChoice(r, 'subcategory', button.subcategory);
+		const subValue = window.g_form.getValue('subcategory');
 		const subAt = Date.now();
 		const gid = await gidPromise;
 		await setReference(r, 'assignment_group', gid, GROUP);
@@ -196,7 +224,7 @@
 
 		// Double check: re-read every field independently (what the form shows + g_form), twice with a pause so a late
 		// reset by the page is caught. Derived fields (Contract) get a moment to appear. Any mismatch => bail, no save.
-		const exp = {type: typeValue, category: categoryValue, sub: subValue, gid, me, myName, rateSet, rateBlank: Boolean(rateIssue)};
+		const exp = {typeLabel, templateSet, type: typeValue, category: categoryValue, sub: subValue, gid, me, myName, rateSet, rateBlank: Boolean(rateIssue)};
 		let wrong = problems(button, exp);
 		for (const end = Date.now() + 2000; wrong.length && Date.now() < end;) { await sleep(100); checkpoint(r); wrong = problems(button, exp); }
 		if (!wrong.length) { await sleep(300); checkpoint(r); wrong = problems(button, exp); }
@@ -215,10 +243,14 @@
 	function problems(button, exp) {
 		const f = window.g_form, out = [];
 		const same = (what, got, want) => { if (norm(got) !== norm(want)) out.push(`${what} is "${got ?? ''}", expected "${want}"`); };
-		same('Type', selectedText(TYPE.field), TYPE.label);
+		same('Type', selectedText(TYPE.field), exp.typeLabel);
 		same('Category', selectedText(CATEGORY.field), button.category);
 		same('Subcategory', selectedText('subcategory'), button.subcategory);
 		if (f.getValue(TYPE.field) !== exp.type || f.getValue(CATEGORY.field) !== exp.category || f.getValue('subcategory') !== exp.sub) out.push('a choice value differs from the one set');
+		if (exp.templateSet) {
+			if (f.getValue(TEMPLATE.field) !== exp.templateSet) out.push('Change Template is a different record');
+			same('Change Template', shownValue(TEMPLATE.field), button.template);
+		}
 		same('Assignment group', shownValue('assignment_group'), GROUP);
 		if (f.getValue('assignment_group') !== exp.gid) out.push('Assignment group is a different record');
 		same('Assigned to', shownValue('assigned_to'), exp.myName);

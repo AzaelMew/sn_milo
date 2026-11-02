@@ -283,7 +283,7 @@ Save, so dry run is *not* write-free; never use it on production as a test.
 Inert until `window.__snMiloMainSettings` reports `monitoring-routing` enabled; disable removes the buttons and cancels a
 run at its next checkpoint.
 
-When the form's Channel is `monitoring` it adds routing buttons (**Windows**, **Linux**, **MSSQL**) in the empty strip right
+When the form's Channel is `monitoring` it adds routing buttons (**Windows**, **Linux**, **MSSQL**, **Disk**) in the empty strip right
 of the Channel row (absolutely positioned: no layout space; two per row). A click fills the form through `g_form`:
 Type = Incident, Category/Subcategory per button (Server / Windows Operating system, Server / Non-Windows,
 Application platform / Database), Assignment group = Monitoring, Assigned to = the signed-in user (`g_user`, so no person
