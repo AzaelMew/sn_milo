@@ -7,6 +7,20 @@ lifecycle) plus the migrated **Informatica button** (Task 4, content scripts onl
 **KB dark mode** (Task 5, attribute-gated declarative CSS) and both **alerts** (Task 6, worker module + MAIN bridge +
 ISOLATED poller each) and the **timecard overlay** (Task 7, MAIN-world content scripts + an options-status worker module).
 
+## Updates in 1.12.0
+
+- **Rule export/import:** the Critical alert rules editor exports its current validated list (including unsaved
+  edits) as JSON. Import validates the entire file and asks before replacing the editor list; review it and click
+  **Save rules** to apply. Known-ticket history, migration state and other settings are not imported or reset.
+  Exported files contain account names: keep them private and do not commit them to this repository.
+- **Timecard targeting:** supported nested Workspace record routes use the innermost record, so a case opened
+  under an interaction targets the case rather than its parent. Unsupported or malformed child routes hide the
+  launcher instead of billing a different record. Root-record `/params/` routes are supported too.
+- **Timecard launcher recovery:** the launcher follows the visible native Record Time toolbar when Workspace
+  retains an old hidden toolbar at the same URL, preserving button identity and focus on unchanged toolbars.
+- **Inbox scope:** the embedded Inbox is excluded from agent workspaces; Classic and Platform Analytics remain
+  supported to avoid embedding a competing agent workspace inside CSM.
+
 ## Floating native Inbox (1.8.0; red dot 1.9.0; frame fix 1.9.1; presence bubble 1.10.0)
 
 The **Floating native Inbox** toggle enables a bottom-right, initially collapsed Inbox on both configured

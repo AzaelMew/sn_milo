@@ -7,7 +7,13 @@
   const settings = globalThis.__snMiloController;
   if (typeof settings?.subscribe !== 'function') return;
   let unsubscribe = null;
-  let host = null, panel = null, toggle = null, frame = null, scanTimer = null;
+  // The embedded Inbox boots a full workspace, including native tab persistence.
+  // Keep it out of CSM/agent workspaces. Classic and Analytics dashboards
+  // still need the floating Inbox; Analytics is not the agent tabbed workspace.
+  const supportsOverlay = () => !/^\/now(?:\/|$)/i.test(location.pathname) ||
+    /^\/now\/nav\/ui\/classic(?:\/|$)/i.test(location.pathname) ||
+    /^\/now\/platform-analytics-workspace(?:\/|$)/i.test(location.pathname);
+  let host = null, panel = null, toggle = null, frame = null, scanTimer = null, routeTimer = null;
   let selected = null, status = null, loadTimeout = null;
   let presenceEl = null, menuEl = null, presenceObserver = null, presenceRoot = null, outsideHandler = null, menuSig = '';
   const PRESENCE_LABEL = /^Agent presence state:\s*(\S.*?)\s*$/i;
@@ -211,6 +217,7 @@
   }
   const css = (node, values) => { for (const [key, value] of Object.entries(values)) node.style.setProperty(key, value, 'important'); };
   function scan() {
+    if (!supportsOverlay()) { teardown(); return; }
     try { isolate(); } catch { unavailable(); return; }
     syncBadge();
   }
@@ -270,7 +277,7 @@
     if (loadTimeout !== null) { clearTimeout(loadTimeout); loadTimeout = null; }
   }
   function mount() {
-    if (!controller.active || host) return;
+    if (!controller.active || host || !supportsOverlay()) return;
     host = document.createElement('div');
     host.id = 'sn-milo-inbox-overlay';
     const root = host.attachShadow({mode: 'open'});
@@ -332,7 +339,22 @@
     panel.hidden = false; toggle.setAttribute('aria-expanded', 'true');
   }
   function collapse() { panel.hidden = true; toggle.setAttribute('aria-expanded', 'false'); }
+  // Route watcher: survives route-driven teardown so an SPA return to a supported route remounts.
+  // Only disable()/stop clear it; one interval at most, no observers.
+  function watchRoute() {
+    if (!controller.active) return;
+    if (supportsOverlay()) { if (!host) mount(); } else if (host) teardown();
+  }
+  function start() {
+    if (!controller.active) return;
+    if (routeTimer === null) routeTimer = setInterval(watchRoute, 1000);
+    mount();
+  }
   function disable() {
+    if (routeTimer !== null) { clearInterval(routeTimer); routeTimer = null; }
+    teardown();
+  }
+  function teardown() {
     if (scanTimer !== null) { clearInterval(scanTimer); scanTimer = null; }
     if (loadTimeout !== null) { clearTimeout(loadTimeout); loadTimeout = null; }
     stopObserving(); stopCount();
@@ -346,7 +368,7 @@
     off?.(); disable();
   }};
   globalThis.__snMiloInboxOverlay = controller;
-  unsubscribe = settings?.subscribe?.('inbox-overlay', {start: mount, stop(reason) {
+  unsubscribe = settings?.subscribe?.('inbox-overlay', {start, stop(reason) {
     if (reason === 'disabled' || reason === 'mode-change') disable(); else controller.stop();
   }});
 })();

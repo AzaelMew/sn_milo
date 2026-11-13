@@ -50,7 +50,7 @@ function doc(){
   d.defaultView={MutationObserver,getComputedStyle:n=>({display:n.hidden?'none':'block',visibility:n.style.visibility||d.documentElement.style.visibility||'visible'})};
   return d;
 }
-function page({nested=false,path='/now/platform-analytics-workspace',noSettings=false}={}){
+function page({nested=false,path='/nav_to.do',noSettings=false}={}){
   const document=doc(), intervals=new Map(), timeouts=new Map();let id=0, handlers, subscriptions=0;
   const window=new Element('window',document);window.top=nested?{}:window;
   const context=vm.createContext({document,window,location:{origin:'https://example.com',pathname:path},URL,
@@ -64,6 +64,52 @@ function page({nested=false,path='/now/platform-analytics-workspace',noSettings=
   return {context,document,window,run,nodes,intervals,timeouts,get subscriptions(){return subscriptions;},
     enable:()=>handlers.start(),disable:()=>handlers.stop('disabled'),tick:()=>{for(const f of [...intervals.values()])f();}};
 }
+test('agent workspace routes never preload a competing workspace, even when enabled or reinjected',()=>{
+  for(const path of ['/now/cwf/agent/home','/now/cwf/agent/inbox','/now/workspace/agent','/now/platform-analytics-workspace-other']){
+    const p=page({path});p.enable();p.run();p.enable();
+    assert.equal(p.nodes().length,0,path);
+    assert.equal(p.intervals.size,1,path);
+    assert.equal(p.timeouts.size,0,path);
+    p.disable();assert.equal(p.intervals.size,0,path);
+  }
+});
+test('Analytics dashboards preload and retain the Inbox; entering CSM removes it',()=>{
+  for(const path of ['/now/platform-analytics-workspace','/now/platform-analytics-workspace/dashboards/params/edit/false/sys-id/example/__state__/example']){
+    const p=page({path});p.enable();
+    const frame=p.nodes().find(n=>n.localName==='iframe');assert.ok(frame,path);
+    p.tick();p.run();assert.equal(p.nodes().find(n=>n.localName==='iframe'),frame);
+    p.context.location.pathname='/now/cwf/agent/home';p.tick();
+    assert.equal(p.nodes().length,0);assert.equal(p.intervals.size,1);assert.equal(p.timeouts.size,0);
+  }
+});
+test('Classic shell keeps its Inbox but navigating into a workspace tears it down',()=>{
+  const p=page({path:'/now/nav/ui/classic/params/target/home.do'});p.enable();
+  assert.equal(p.nodes().filter(n=>n.localName==='iframe').length,1);
+  p.context.location.pathname='/now/cwf/agent/home';p.tick();
+  assert.equal(p.nodes().length,0);assert.equal(p.intervals.size,1);assert.equal(p.timeouts.size,0);
+});
+test('route watcher remounts: initial excluded -> supported, and supported -> excluded -> supported',()=>{
+  const p=page({path:'/now/cwf/agent/home'});p.enable();
+  assert.equal(p.nodes().length,0);assert.equal(p.intervals.size,1);
+  p.context.location.pathname='/now/nav/ui/classic/params/target/home.do';p.tick();
+  assert.equal(p.nodes().filter(n=>n.localName==='iframe').length,1);
+  p.context.location.pathname='/now/cwf/agent/inbox';p.tick();
+  assert.equal(p.nodes().length,0);assert.equal(p.timeouts.size,0);assert.equal(p.intervals.size,1);
+  p.context.location.pathname='/now/platform-analytics-workspace';p.tick();
+  assert.equal(p.nodes().filter(n=>n.localName==='iframe').length,1);
+  p.tick();assert.equal(p.nodes().filter(n=>n.localName==='iframe').length,1);assert.equal(p.intervals.size,2);
+});
+test('route watcher is stopped by disable, stop and reinjection never duplicates it',()=>{
+  const p=page({path:'/now/cwf/agent/home'});p.enable();p.enable();p.run();
+  assert.equal(p.intervals.size,1);assert.equal(p.subscriptions,1);
+  p.disable();assert.equal(p.intervals.size,0);
+  p.context.location.pathname='/nav_to.do';p.tick();assert.equal(p.nodes().length,0);
+  p.enable();assert.equal(p.nodes().filter(n=>n.localName==='iframe').length,1);
+  p.context.location.pathname='/now/cwf/agent/home';p.tick();assert.equal(p.nodes().length,0);
+  p.context.__snMiloInboxOverlay.stop();
+  assert.equal(p.intervals.size,0);assert.equal(p.timeouts.size,0);assert.equal(p.subscriptions,0);
+  p.context.location.pathname='/nav_to.do';p.tick();p.enable();assert.equal(p.nodes().length,0);assert.equal(p.intervals.size,0);
+});
 test('Inbox preloads one same-origin frame on enable, stays collapsed, and reuses it on click and collapse',()=>{
   const p=page(); assert.equal(p.nodes().length,0);p.enable();
   const frames=()=>p.nodes().filter(n=>n.localName==='iframe');
@@ -71,7 +117,7 @@ test('Inbox preloads one same-origin frame on enable, stays collapsed, and reuse
   assert.equal(button.getAttribute('aria-expanded'),'false');assert.equal(frames().length,1);
   const frame=frames()[0];
   assert.equal(frame.src,'https://example.com/now/cwf/agent/inbox');assert.equal(frame.name,'sn-milo-native-inbox');
-  assert.equal(p.nodes().find(n=>n.localName==='section').hidden,true);assert.equal(p.intervals.size,1);
+  assert.equal(p.nodes().find(n=>n.localName==='section').hidden,true);assert.equal(p.intervals.size,2);
   button.fire('click');assert.equal(frames().length,1);assert.equal(frames()[0],frame);
   assert.equal(button.getAttribute('aria-expanded'),'true');button.fire('click');
   assert.equal(button.getAttribute('aria-expanded'),'false');assert.ok(frame.parentNode);

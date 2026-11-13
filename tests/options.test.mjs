@@ -114,6 +114,94 @@ const statusOf = (over = {}, features = {}) => ({ready: true, error: null, warni
   features: Object.fromEntries(FEATURE_NAMES.map(n => [n, features[n] || feature()])), ...over});
 const pending = {state: 'pending-migration', reason: 'no migration decision recorded yet'};
 
+const portableRule = {id: 'account', name: 'Account', enabled: true, priority: '', account: 'Acme Oy'};
+const ruleFile = rules => JSON.stringify({schema: 1, feature: 'critical-alert', rules});
+async function importRuleFile(p, text, extra = {}) {
+  p.nodes['rules-file'].files = [{size: Buffer.byteLength(text), async text() { return text; }, ...extra}];
+  await p.nodes['rules-file'].listeners.change();
+}
+
+test('rule list export downloads validated current edits without saving and cleans up its URL', async () => {
+  const p = optionsPage();
+  await settleOptions();
+  const name = p.nodes['rule-list'].children[0].children[1];
+  name.value = 'Edited critical'; name.listeners.input();
+  p.nodes['rules-export'].click();
+  const data = JSON.parse(await p.downloads[0].text());
+  assert.equal(data.schema, 1);
+  assert.equal(data.feature, 'critical-alert');
+  assert.equal(data.rules[0].name, 'Edited critical');
+  assert.equal(p.writes.length, 0);
+  const link = p.document.body.children[0];
+  assert.equal(link.download, 'sn-milo-critical-alert-rules.json');
+  assert.equal(link.clicked, true);
+  assert.equal(link.removed, true);
+  p.timers.forEach(fn => fn());
+  assert.deepEqual(p.revoked, ['blob:test-1']);
+});
+
+test('rule list import replaces only the draft, survives storage refresh and saves explicitly', async () => {
+  const p = optionsPage(); await settleOptions();
+  p.nodes['rules-import'].click();
+  assert.equal(p.nodes['rules-file'].clicked, true);
+  await importRuleFile(p, ruleFile([portableRule, {...portableRule, id: 'disabled', enabled: false}]));
+  assert.equal(p.confirmations.length, 1);
+  assert.equal(p.nodes['rule-list'].children.length, 2);
+  assert.equal(p.nodes['rule-list'].children[0].children[2].value, '');
+  assert.equal(p.nodes['rule-list'].children[1].children[0].checked, false);
+  assert.match(p.nodes['rules-state'].textContent, /imported.*save rules/i);
+  assert.equal(p.writes.length, 0);
+  p.changes[0]({'crit.rulesV1': {}}, 'local'); await settleOptions();
+  assert.equal(p.nodes['rule-list'].children.length, 2, 'storage events cannot overwrite imported edits');
+  await p.nodes['rules-save'].click();
+  assert.deepEqual(JSON.parse(JSON.stringify(p.writes)), [{'crit.rulesV1': {schema: 1, rules: [portableRule, {...portableRule, id: 'disabled', enabled: false}]}}]);
+  assert.equal(p.nodes['rules-file'].value, '');
+});
+
+test('cancelled rule import preserves edits; empty lists can round trip', async () => {
+  const p = optionsPage(); await settleOptions();
+  p.window.confirmResult = false;
+  await importRuleFile(p, ruleFile([]));
+  assert.equal(p.nodes['rule-list'].children.length, 1);
+  assert.equal(p.writes.length, 0);
+  p.window.confirmResult = true;
+  await importRuleFile(p, ruleFile([]));
+  assert.equal(p.nodes['rule-list'].children.length, 0);
+  p.nodes['rules-export'].click();
+  assert.deepEqual(JSON.parse(await p.downloads[0].text()).rules, []);
+});
+
+test('invalid rule imports preserve the whole draft and never write storage', async () => {
+  const cases = [
+    ['{', {}, /JSON/i],
+    [JSON.stringify({schema: 2, feature: 'critical-alert', rules: []}), {}, /schema/i],
+    [JSON.stringify({schema: 1, feature: 'interaction-alert', rules: []}), {}, /critical-alert/i],
+    [ruleFile([portableRule, portableRule]), {}, /duplicate/i],
+    [ruleFile([{...portableRule, account: 'bad^query'}]), {}, /invalid account/i],
+    [ruleFile([{...portableRule, priority: '9'}]), {}, /priority/i],
+    [ruleFile(Array.from({length: 11}, (_, i) => ({...portableRule, id: `r-${i}`}))), {}, /at most/i],
+    [ruleFile([]), {size: 65537}, /64 KiB/i],
+    [ruleFile([]), {async text() { throw new Error('read failed'); }}, /read failed/i]
+  ];
+  for (const [text, extra, error] of cases) {
+    const p = optionsPage(); await settleOptions();
+    await importRuleFile(p, text, extra);
+    assert.match(p.nodes['rules-error'].textContent, error);
+    assert.equal(p.nodes['rule-list'].children[0].children[1].value, 'Critical');
+    assert.equal(p.confirmations.length, 0);
+    assert.equal(p.writes.length, 0);
+    assert.equal(p.nodes['rules-file'].value, '');
+  }
+});
+
+test('invalid draft cannot be exported', async () => {
+  const p = optionsPage(); await settleOptions();
+  p.nodes['rule-add'].click();
+  p.nodes['rules-export'].click();
+  assert.equal(p.downloads.length, 0);
+  assert.match(p.nodes['rules-error'].textContent, /priority or an account/i);
+});
+
 test('viewModel: completion actions only while an alert is not ready; checkboxes never complete migration', () => {
   const vm = viewModel(statusOf({}, {
     'critical-alert': feature({enabled: false, reason: 'pending-migration: x', migration: pending}),

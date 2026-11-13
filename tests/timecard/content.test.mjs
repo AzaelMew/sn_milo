@@ -26,6 +26,20 @@ test('copies the native button computed theme instead of the built-in style',()=
  assert.equal(button.style.border,'1px solid rgb(223, 225, 230)');
  assert.equal(button.style.borderRadius,'4px');
 });
+test('moves Add timecard to the visible toolbar when the old toolbar stays connected at the same URL',()=>{
+ const f=fixture();
+ const oldBar=f.doc.createElement('div');f.action.remove();oldBar.append(f.action);f.doc.body.append(oldBar);
+ const app=f.load();const oldButton=f.doc.querySelector('#sn-timecard-add');
+ f.action.getBoundingClientRect=()=>({width:0,height:0});
+ oldButton.getBoundingClientRect=()=>({width:0,height:0});
+ const newBar=f.doc.createElement('div');const action=f.doc.createElement('button');
+ action.textContent='Record Time';newBar.append(action);f.doc.body.append(newBar);
+ app.refresh();
+ const button=f.doc.querySelector('#sn-timecard-add');
+ assert.equal(button.parentNode,newBar);
+ assert.equal(f.doc.querySelectorAll('*').filter(e=>e.id==='sn-timecard-add').length,1);
+ app.refresh();assert.equal(f.doc.querySelector('#sn-timecard-add'),button,'unchanged toolbar must not remount the button');
+});
 test('falls back to the built-in style when computed theme is unavailable',()=>{
  const f=fixture('test',{theme:false});f.load();
  const button=f.doc.querySelectorAll('button').find(b=>b.textContent==='Add timecard');
@@ -43,6 +57,16 @@ test('opens exactly one same-origin native form overlay on an enabled test insta
 });
 test('an explicitly disabled instance never creates a writable native form',()=>{
  const f=fixture('production');const app=f.load();app.open();const overlay=f.doc.querySelector('#sn-timecard-overlay');assert.ok(overlay);assert.equal(overlay.shadowRoot.querySelectorAll('iframe').length,0);assert.ok(overlay.shadowRoot.querySelectorAll('*').some(e=>e.textContent.includes('Time-entry submissions are disabled for this instance')));
+});
+test('mounts beside Record Time on a parameterized Workspace record URL using the real core',()=>{
+ const f=fixture();
+ f.window.location.href+='/params/query/active%3Dtrue';
+ vm.runInContext(fs.readFileSync(new URL('../../features/timecard/core.js',import.meta.url),'utf8'),f.context);
+ const app=f.load();
+ assert.ok(f.doc.querySelector('#sn-timecard-add'),'a /params/ suffix must not suppress the launch button');
+ app.open();
+ const frame=f.doc.querySelector('#sn-timecard-overlay').shadowRoot.querySelector('iframe');
+ assert.equal(new URL(frame.src).searchParams.get('sysparm_query'),`userDYNAMIC${'b'.repeat(32)}^taskDYNAMIC${'a'.repeat(32)}`);
 });
 test('rejects a missing native form URL without creating an iframe',()=>{
  const f=fixture();f.context.SnTimecardCore.nativeFormUrl=()=>null;const app=f.load();app.open();assert.equal(f.doc.querySelector('#sn-timecard-overlay'),null);

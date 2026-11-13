@@ -65,7 +65,7 @@ test('timecard: launch button + draft-preserving disable on production and test 
     const fixtures = ({url, resourceType}) => {
       const u = new URL(url);
       if (resourceType !== 'Document' || (u.origin !== P && u.origin !== T)) return null;
-      if (u.pathname === CASE_PATH) return {body: CASE_HTML};
+      if ([CASE_PATH, CASE_PATH + '/params/query/active%3Dtrue'].includes(u.pathname)) return {body: CASE_HTML};
       if (u.pathname === FORM_PATH) return {body: FORM_HTML};
       if (u.pathname === SHELL_PATH) return {body: SHELL_HTML};
       return null;
@@ -242,16 +242,43 @@ test('timecard: launch button + draft-preserving disable on production and test 
         assert.deepEqual([reloaded.top, reloaded.hidden, reloaded.buttons, reloaded.writes, reloaded.submits], [true, 'none', 0, 0, 0]);
       }
 
+      // 11. Workspace retains a hidden toolbar while replacing it with a shadow
+      // action at the SAME URL. No manual refresh: the observer/poll must repair it.
+      await clickOption(true);
+      const workspace = pages.production;
+      await waitFor(async () => (await state(workspace)).buttons === 1, {what: 'Workspace button before toolbar replacement'});
+      await evaluate(workspace, `(() => {
+        const old = document.getElementById('bar'); old.hidden = true;
+        const bar = document.createElement('div'); bar.id = 'live-bar';
+        const host = document.createElement('now-button');
+        host.attachShadow({mode: 'open'}).innerHTML = '<button type="button">Record Time</button>';
+        bar.append(host); document.body.append(bar); return true;
+      })()`);
+      const liveButton = `document.querySelector('#live-bar > #sn-timecard-add')`;
+      await waitFor(() => evaluate(workspace, `Boolean(${liveButton}?.getBoundingClientRect().width)`), {what: 'Add timecard moves beside visible shadow action'});
+      assert.equal(await evaluate(workspace, `document.getElementById('bar').isConnected && document.getElementById('bar').hidden`), true);
+      assert.equal((await state(workspace)).buttons, 1, 'no duplicate left in retained toolbar');
+      await evaluate(workspace, `${liveButton}.__stable = true; ${liveButton}.focus(); true`);
+      assert.equal(await evaluate(workspace, `(() => {
+        for (let i = 0; i < 3; i++) window.__snTimecardApp.refresh();
+        return ${liveButton}.__stable === true && document.activeElement === ${liveButton};
+      })()`), true, 'steady refresh preserves button identity and focus');
+
+      // Parameterized root-record URLs must mount on first load too (real core,
+      // not the VM fixture's permissive parseCaseUrl stub).
+      const parameterized = await open(P + CASE_PATH + '/params/query/active%3Dtrue');
+      await waitFor(async () => (await state(parameterized)).buttons === 1, {what: 'parameterized Workspace launch button'});
+
       // nothing but the fixture documents was served; no write ever left a page
       assert.deepEqual(browser.interceptionErrors, []);
       for (const r of browser.intercepted) {
         const u = new URL(r.url);
-        const fixture = r.resourceType === 'Document' && [CASE_PATH, FORM_PATH, SHELL_PATH].includes(u.pathname);
+        const fixture = r.resourceType === 'Document' && [CASE_PATH, CASE_PATH + '/params/query/active%3Dtrue', FORM_PATH, SHELL_PATH].includes(u.pathname);
         assert.equal(r.action, fixture ? 'fulfilled-fixture' : 'failed', r.url);
         assert.equal(r.method, 'GET', `no write request: ${r.method} ${r.url}`);
         assert.ok(!u.pathname.startsWith('/api/'), `no API request: ${r.url}`);
       }
-      const watched = new Set([...Object.values(pages), ...Object.values(shells), ...nativePages, opt]);
+      const watched = new Set([...Object.values(pages), ...Object.values(shells), ...nativePages, parameterized, opt]);
       assert.deepEqual(problems.filter(p => watched.has(p.sessionId)), [], 'no page/options errors');
       console.log(`# timecard verified in disposable pid ${browser.pid} port ${browser.port}; intercepted ${browser.intercepted.length} service-now requests (${browser.intercepted.filter(r => r.action === 'fulfilled-fixture').length} fixtures, rest failed); nothing submitted`);
     } finally {

@@ -16,8 +16,8 @@
     document.getElementById('sn-timecard-overlay')?.shadowRoot?.querySelector('iframe'))return;
  window.__snTimecardApp?.stop();
  let button=null;
+ let nativeAnchor=null;
  let caseContext=null;
- let lastUrl=null;
  const loadWatchToken={};
  const loadWatches=new Map();
  let stopped=false;
@@ -173,31 +173,32 @@
  }
  function refresh(){
   if(stopped||!enabled)return;
-  if(button?.isConnected&&lastUrl===location.href)return;
-  button?.remove();button=null;
   caseContext=core.parseCaseUrl(location.href);
-  if(!caseContext)return;
+  if(!caseContext){button?.remove();button=null;nativeAnchor=null;return;}
   let action=null;
   for(const root of roots()){
    watch(root);
+   if(action)continue;
    action=[...root.querySelectorAll('button,[role="button"]')].find(el=>{
     const raw=el.innerText||el.textContent||el.getAttribute('aria-label')||'';
     const text=String(raw).replace(/\s+/g,' ').trim();
     const rect=el.getBoundingClientRect();const style=getComputedStyle(el);
     return text==='Record Time'&&rect.width>0&&rect.height>0&&style.visibility!=='hidden'&&style.display!=='none';
    });
-   if(action)break;
   }
-  if(!action)return;
+  if(!action){button?.remove();button=null;nativeAnchor=null;return;}
   const host=action.getRootNode().host;
   const anchor=host?.localName==='now-button'?host:action;
+  // Workspace can retain a hidden toolbar at the same URL. Revalidate the
+  // visible native action, not just our old button's document connection.
+  if(button?.isConnected&&nativeAnchor===anchor&&button.parentNode===anchor.parentNode)return;
+  button?.remove();button=null;nativeAnchor=anchor;
   button=anchor.ownerDocument.createElement('button');
   button.id='sn-timecard-add';button.setAttribute('type','button');button.textContent='Add timecard';
   styleButton(button,action);
   button.addEventListener('click',open);
   anchor.parentNode.insertBefore(button,anchor);
   ensureHoverStyle(button.ownerDocument);
-  lastUrl=location.href;
  }
  function resume(){
   if(stopped||enabled)return;
@@ -214,7 +215,7 @@
   if(refreshTimer!==null){clearTimeout(refreshTimer);refreshTimer=null;}
   try{mutationObserver?.disconnect();}catch{/* none */}
   observedRoots.clear();
-  button?.remove();button=null;lastUrl=null;
+  button?.remove();button=null;nativeAnchor=null;
  }
  // Full teardown for reinjection of a controller that holds no open form. Not used for settings changes.
  function stop(){

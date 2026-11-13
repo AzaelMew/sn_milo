@@ -234,6 +234,47 @@ async function saveRules() {
   } catch (error) { showRulesError(`Could not save the rules: ${error.message}`); }
 }
 
+function exportRules() {
+  const v = validateRules(draft);
+  if (!v.ok) { showRulesError(v.error); return; }
+  try {
+    const text = JSON.stringify({schema: 1, feature: 'critical-alert', rules: v.rules}, null, 2) + '\n';
+    const url = URL.createObjectURL(new Blob([text], {type: 'application/json'}));
+    const link = el('a', {href: url, download: 'sn-milo-critical-alert-rules.json'});
+    try {
+      document.body.append(link);
+      link.click();
+      showRulesError('');
+    } finally {
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+  } catch (error) { showRulesError(`Could not export the rules: ${error.message}`); }
+}
+
+const rulesFile = document.getElementById('rules-file');
+async function importRules() {
+  const file = rulesFile.files?.[0];
+  if (!file) return;
+  try {
+    if (file.size > 65536) throw new Error('Rule files must be at most 64 KiB.');
+    let data;
+    try { data = JSON.parse(await file.text()); }
+    catch (error) { throw new Error(`Could not read rule JSON: ${error.message}`); }
+    if (!data || data.schema !== 1) throw new Error('Rule file schema must be 1.');
+    if (data.feature !== 'critical-alert') throw new Error('Expected a critical-alert rule export.');
+    const v = validateRules(data.rules);
+    if (!v.ok) throw new Error(v.error);
+    if (!window.confirm(`Replace the rule list in this editor with ${v.rules.length} imported rule(s)?\n\nUnsaved edits will be replaced. Nothing takes effect until you click Save rules. Known tickets and other settings are not changed.`)) return;
+    draft = v.rules.map(r => ({...r}));
+    showRulesError('');
+    renderRules();
+    setDirty(true);
+    rulesState.textContent = `Imported ${draft.length} rule(s) — review, then click Save rules`;
+  } catch (error) { showRulesError(`Could not import the rules: ${error.message}`); }
+  finally { rulesFile.value = ''; } // allow selecting the same file again, including after a failed import
+}
+
 async function forgetSeen() {
   if (!window.confirm('Forget every ticket that already alerted?\n\nEvery ticket matching your rules right now will alert again on the next poll (within about 2 minutes, while a ServiceNow tab is open).')) return;
   try {
@@ -249,6 +290,9 @@ document.getElementById('rule-add').addEventListener('click', () => {
   renderRules();
 });
 document.getElementById('rules-save').addEventListener('click', saveRules);
+document.getElementById('rules-export').addEventListener('click', exportRules);
+document.getElementById('rules-import').addEventListener('click', () => rulesFile.click());
+rulesFile.addEventListener('change', importRules);
 document.getElementById('forget-seen').addEventListener('click', forgetSeen);
 
 // ---- one-entry-per-line lists (interaction accounts, Informatica recipients) ------------------------------------

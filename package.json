@@ -1,6 +1,6 @@
 {
   "name": "sn_milo",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "private": true,
   "description": "ServiceNow Milo: one MV3 extension combining five ServiceNow extensions with feature toggles.",
   "scripts": {

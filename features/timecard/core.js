@@ -29,8 +29,22 @@
       const url = new URL(value);
       if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
       const match = url.pathname.match(
-        /^\/now\/cwf\/agent\/record\/((?:sn_customerservice_case(?:_internal)?|incident|change_request|interaction))\/([a-fA-F0-9]{32})(?:\/sub\/.*)?$/);
-      if (match) return { table: match[1], sysId: match[2] };
+        /^\/now\/cwf\/agent\/record\/((?:sn_customerservice_case(?:_internal)?|incident|change_request|interaction))\/([a-fA-F0-9]{32})(\/sub\/.*|\/params\/.*)?$/);
+      if (match) {
+        let context = { table: match[1], sysId: match[2] };
+        let tail = match[3] || '';
+        // A case opened under an interaction is the active sub-record. Using
+        // the root route silently links time to the interaction instead.
+        while (tail.startsWith('/sub/')) {
+          const child = tail.match(
+            /^\/sub\/record\/((?:sn_customerservice_case(?:_internal)?|incident|change_request|interaction))\/([a-fA-F0-9]{32})(\/sub\/.*|\/params\/.*)?$/);
+          // Never fall back to a different task when the sub-record is unknown.
+          if (!child) return null;
+          context = { table: child[1], sysId: child[2] };
+          tail = child[3] || '';
+        }
+        return context;
+      }
       const prefix = '/now/nav/ui/classic/params/target/';
       let form = url;
       if (url.pathname.startsWith(prefix)) {

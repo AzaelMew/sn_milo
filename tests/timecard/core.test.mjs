@@ -63,11 +63,23 @@ test('permits submissions only for an explicitly enabled test origin', () => {
 
 test('extracts case context from Workspace record routes', () => {
   for (const table of ['sn_customerservice_case', 'sn_customerservice_case_internal']) {
-    for (const suffix of ['', '/sub/record/task/other', '?sysparm_view=case#details']) {
+    for (const suffix of ['', `/sub/record/${table}/${SYS_ID}`, '?sysparm_view=case#details']) {
       const url = `${TEST_ORIGIN}/now/cwf/agent/record/${table}/${SYS_ID}${suffix}`;
       assert.deepEqual(plain(core.parseCaseUrl?.(url)), { table, sysId: SYS_ID });
     }
   }
+});
+
+test('Time Worked targets the case subtab, not its parent interaction', () => {
+  const parentId = '11111111111111111111111111111111';
+  const route = `${TEST_ORIGIN}/now/cwf/agent/record/interaction/${parentId}` +
+    `/sub/record/sn_customerservice_case/${SYS_ID}/params/query/active%3Dtrue`;
+  const context = core.parseCaseUrl(route);
+  assert.deepEqual(plain(context), { table: 'sn_customerservice_case', sysId: SYS_ID });
+  const query = new URL(core.nativeFormUrl(TEST_ORIGIN, context, USER_ID, config))
+    .searchParams.get('sysparm_query');
+  assert.equal(query, `userDYNAMIC${USER_ID}^taskDYNAMIC${SYS_ID}`);
+  assert.ok(!query.includes(parentId), 'the parent interaction must not become the time-entry task');
 });
 
 test('returns null for malformed or unrelated Workspace URLs', () => {
@@ -79,6 +91,10 @@ test('returns null for malformed or unrelated Workspace URLs', () => {
     `${TEST_ORIGIN}/now/cwf/agent/record/sn_customerservice_case_internal/${SYS_ID}a`,
     `${TEST_ORIGIN}/now/cwf/agent/record/sn_customerservice_case_internal/${'z'.repeat(32)}`,
     `${TEST_ORIGIN}${route}/unrelated`, `${TEST_ORIGIN}/prefix${route}`,
+    `${TEST_ORIGIN}${route}/sub/record/task/other`,
+    `${TEST_ORIGIN}${route}/sub/record/sn_customerservice_case/-1`,
+    `${TEST_ORIGIN}${route}/sub/record/sn_customerservice_case/${SYS_ID}a`,
+    `${TEST_ORIGIN}${route}/sub/record/problem/${SYS_ID}`,
     `${TEST_ORIGIN}/now/cwf/agent/home`, `${TEST_ORIGIN}/problem.do?sys_id=${SYS_ID}`,
   ];
   for (const url of invalid) {

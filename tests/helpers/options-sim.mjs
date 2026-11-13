@@ -12,14 +12,22 @@ export function optionsPage() {
     replaceChildren(...nodes) { this.children = nodes; }
     addEventListener(name, fn) { this.listeners[name] = fn; }
     setAttribute(name, value) { this[name] = value; }
+    click() { this.clicked = true; return this.listeners.click?.(); }
+    remove() { this.removed = true; }
     querySelectorAll() { return this.children.flatMap(n => [n, ...n.querySelectorAll()]).filter(n => ['input', 'textarea', 'button'].includes(n.tagName)); }
   }
-  const nodes = Object.fromEntries(['features', 'error', 'warnings', 'notice', 'rule-list', 'rules-error', 'rules-state', 'rule-add', 'rules-save', 'forget-seen', ...['ix-accounts', 'inf-recipients'].flatMap(p => [`${p}-text`, `${p}-error`, `${p}-state`, `${p}-save`]), 'inf-resolve-enabled', 'inf-resolve-notes', 'inf-resolve-error', 'inf-resolve-state', 'inf-resolve-save'].map(id => [id, new Element('div')]));
+  const nodes = Object.fromEntries(['features', 'error', 'warnings', 'notice', 'rule-list', 'rules-error', 'rules-state', 'rule-add', 'rules-save', 'rules-export', 'rules-import', 'rules-file', 'forget-seen', ...['ix-accounts', 'inf-recipients'].flatMap(p => [`${p}-text`, `${p}-error`, `${p}-state`, `${p}-save`]), 'inf-resolve-enabled', 'inf-resolve-notes', 'inf-resolve-error', 'inf-resolve-state', 'inf-resolve-save'].map(id => [id, new Element('div')]));
   const document = {getElementById: id => nodes[id], createElement: tag => new Element(tag), documentElement: new Element('html')};
   const requests = [], focus = [], changes = [];
+  const downloads = [], revoked = [], timers = [], confirmations = [], writes = [];
+  const window = {confirmResult: true, confirm(text) { confirmations.push(text); return this.confirmResult; }, addEventListener(type, fn) { if (type === 'focus') focus.push(fn); }};
+  document.body = new Element('body');
   const chrome = {runtime: {sendMessage(message) { return new Promise(resolve => requests.push({message, resolve})); }}, storage: {local: {async get() { return {}; }, async set() {}}, onChanged: {addListener(fn) { changes.push(fn); }}}};
+  chrome.storage.local.set = async value => { writes.push(value); };
   const source = fs.readFileSync(new URL('../../options.js', import.meta.url), 'utf8').replace(/^import .*;$/gm, '');
-  vm.runInNewContext(source, {...view, ...rules, ...lists, document, chrome, window: {addEventListener(type, fn) { if (type === 'focus') focus.push(fn); }}});
-  return {requests, focus, changes, nodes, boxes: () => nodes.features.querySelectorAll().filter(n => n.type === 'checkbox')};
+  vm.runInNewContext(source, {...view, ...rules, ...lists, document, chrome, window, Blob,
+    URL: {createObjectURL(blob) { downloads.push(blob); return `blob:test-${downloads.length}`; }, revokeObjectURL(url) { revoked.push(url); }},
+    setTimeout(fn) { timers.push(fn); }});
+  return {requests, focus, changes, nodes, window, writes, downloads, revoked, timers, confirmations, document, boxes: () => nodes.features.querySelectorAll().filter(n => n.type === 'checkbox')};
 }
 export const settleOptions = () => new Promise(resolve => setImmediate(resolve));
