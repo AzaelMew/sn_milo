@@ -7,6 +7,17 @@ lifecycle) plus the migrated **Informatica button** (Task 4, content scripts onl
 **KB dark mode** (Task 5, attribute-gated declarative CSS) and both **alerts** (Task 6, worker module + MAIN bridge +
 ISOLATED poller each) and the **timecard overlay** (Task 7, MAIN-world content scripts + an options-status worker module).
 
+## Updates in 1.12.1
+
+- **Informatica detection:** tickets now carry a monitoring-alarm header before the Informatica text
+  (`Monitoring Alarm: <host> - AMS Informatica error: …`), so the button and the resolve precheck match
+  `AMS Informatica` anywhere in the record title / short description (case-insensitive) instead of requiring it as a
+  prefix. The old prefix format still matches; a title without the marker is still ignored.
+- **Informatica note text:** descriptions now begin with a `Monitoring` label followed by a rule of dashes. That
+  leading block is dropped before pasting into *External work notes*; everything after it is pasted verbatim. Only a
+  bare `Monitoring` line (optionally followed by the dash rule) is removed, so a first line like
+  `Monitoring Alarm: …` is kept, and a description that is only the header fails with "Description is empty".
+
 ## Updates in 1.12.0
 
 - **Rule export/import:** the Critical alert rules editor exports its current validated list (including unsaved
@@ -248,7 +259,8 @@ would refuse their messages (`sender.url` has origin `null`). A feature that nee
 
 **Resolve option (1.5.0, off by default).** Options page → *Informatica button: resolve the ticket* (`inf.resolveV1`
 `{schema:1, enabled, notes}`; the notes text is user data, never in source). When on, after the note **Save is
-confirmed** (the editor emptied after Post) the bridge resolves the open incident: GET precheck (must be an open *AMS Informatica…* incident, state
+confirmed** (the editor emptied after Post) the bridge resolves the open incident: GET precheck (the short description
+must contain *AMS Informatica*, at any position — the current tickets prefix it with a monitoring-alarm header — and the state must be
 Assigned/WIP/On hold) → **one** PATCH `{state:"6", close_code:"Solution provided", close_notes:<notes>}` → GET read-back
 that must match. No retry (a timeout reports "outcome unknown"); a dry run never resolves; if the note did not post,
 nothing is written to the ticket. The bridge's `resolve-record` is the only write it can make, limited to `incident`.

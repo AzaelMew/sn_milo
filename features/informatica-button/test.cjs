@@ -202,6 +202,13 @@ test("resolve-record refuses: wrong table, bad id, missing/odd notes, non-Inform
 	}
 });
 
+test("resolve-record: the Informatica marker may sit behind a monitoring-alarm prefix", async () => {
+	const r = resolveHarness({ record: { short_description: "Monitoring Alarm: acme-dw01.example.local - AMS Informatica error: 2026-11-18 01:25:42.32 [ FAILED ] Session EXAMPLE_Load.wf_Example_Load.s_m_Load" } });
+	const out = await r.send();
+	assert.deepEqual([out.ok, out.number, out.state], [true, "INC1", "6"]);
+	assert.deepEqual(r.calls.map(c => c.method), ["GET", "PATCH", "GET"]);
+});
+
 test("resolve-record: a rejected or ignored PATCH is reported by the read-back, never retried", async () => {
 	for (const opts of [{ patchOk: false }, { applyPatch: false }]) {
 		const r = resolveHarness(opts);

@@ -213,7 +213,7 @@ const el = (doc, tag, attrs = {}, text = '') => {
  * button submits the pending note (server.posts, editor emptied after postDelay) unless postWorks is false. Hooks let
  * tests intervene at exact points (e.g. disable the feature right after a chip appears).
  */
-export function createWorkspace({clock, doc = createDocument(), title = 'AMS Informatica: nightly load failed', description = 'Nightly Informatica load failed at step 3; please investigate the DW job.',
+export function createWorkspace({clock, doc = createDocument(), title = 'Monitoring Alarm: acme-dw01.example.local - AMS Informatica error: 2026-11-18 01:25:42.32 [ FAILED ] Session EXAMPLE_Load.wf_Example_Load.s_m_Load', description = 'Nightly Informatica load failed at step 3; please investigate the DW job.',
   savedList = '', presetChips = [], saveButton = true, saveDelay = 300, postDelay = 300, saveWorks = true, postWorks = true, saveSubmitsNote = false, hooks = {}} = {}) {
   const log = [];
   const server = {list: savedList, posts: []};

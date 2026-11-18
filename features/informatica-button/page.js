@@ -95,7 +95,8 @@
 
 	// ---- guarded resolve (the ONLY write this bridge can make) --------------------------------------------------
 	// Sends one payload (fixed state/code, user-supplied notes) to one record the page is showing, once, and never retries a PATCH. Refuses anything
-	// that is not an open Informatica incident, then reads the record back so the caller learns what really happened.
+	// that is not an open Informatica incident (the marker may sit anywhere in the short description, e.g. behind a
+	// monitoring-alarm prefix), then reads the record back so the caller learns what really happened.
 	// Notes are user data (options page); everything else is fixed here.
 	const RESOLVE = Object.freeze({ table: "incident", state: "6", close_code: "Solution provided" });
 	const OPEN_STATES = new Set(["1", "2", "3"]);
@@ -139,7 +140,7 @@
 		if (!live()) return;
 		if (before.error) { respond({ ok: false, stage: "precheck", error: before.error }); return; }
 		const b = before.record;
-		if (!/^ams informatica/i.test(String(b.short_description || "").trim())) {
+		if (!/ams informatica/i.test(String(b.short_description || "").trim())) {
 			respond({ ok: false, stage: "precheck", number: b.number, error: "not an Informatica ticket; refusing to resolve" });
 			return;
 		}

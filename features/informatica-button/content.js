@@ -34,7 +34,9 @@
 	if (previous?.lastRun?.status === "running") return;
 	const maintenance = globalThis.__snInfMaintenance ||= {owner: null};
 
-	const TITLE_PREFIX = "ams informatica";
+	// Record titles changed format (the ticket text is now prefixed with a monitoring-alarm header), so the record is
+	// recognised by the marker anywhere in the title, not by a prefix.
+	const TITLE_MARKER = "ams informatica";
 	// The people to add are user data (options page → worker): delivered with the run lease, never stored in source.
 	let EMAILS = [];
 	const BUTTON_ID = "sn-inf-button";
@@ -108,7 +110,7 @@
 	function findContext() {
 		if (!/\/record\//.test(location.pathname)) return null;
 		const title = deepFindAll(document, el => el.tagName === "H1" && visible(el) &&
-			text(el).toLowerCase().startsWith(TITLE_PREFIX))[0];
+			text(el).toLowerCase().includes(TITLE_MARKER))[0];
 		if (!title) return null;
 		const scope = nearestMacroponent(title);
 		if (!scope) return null;
@@ -400,12 +402,18 @@
 		fail("could not switch to the External work notes tab");
 	}
 
+	// Ticket descriptions now start with a "Monitoring" header block (a label line and a rule of dashes) before the
+	// real problem text; it carries nothing for the external note, so it is dropped. Everything after it is pasted
+	// verbatim — only this leading block is removed, and only when "Monitoring" sits alone on the first line.
+	const MONITORING_HEADER = /^\s*Monitoring[^\S\n]*\r?\n(?:[^\S\n]*\r?\n)*(?:-{3,}[^\S\n]*(?:\r?\n|$))?/i;
+	const noteBody = value => value.replace(MONITORING_HEADER, "").trim();
+
 	async function pasteDescription(r) {
 		if (!externalTabActive()) fail("External work notes tab is not active; not pasting");
 		const ctx = requireCtx();
 		const desc = deepFind(ctx.scope, el => el.tagName === "TEXTAREA" &&
 			label(el).startsWith("Description") && visible(el)) || fail("Description field not found");
-		const value = desc.value.trim();
+		const value = noteBody(desc.value);
 		if (!value) fail("Description is empty");
 		const frame = externalEditorFrame(ctx) || fail("External work notes editor not found");
 		const doc = frame.contentDocument || fail("editor document is not accessible");

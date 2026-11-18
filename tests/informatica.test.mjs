@@ -78,6 +78,26 @@ test('real settings path: disabled at load → nothing mounts, bridge inert; non
   assert.equal(buttons(g)[0].style.display, 'none', 'no AMS Informatica record → hidden (original behaviour)');
 });
 
+test('detection: the Informatica marker anywhere in the record title shows the button, a title without it does not', async () => {
+  const cases = [
+    // current ticket format: a monitoring-alarm header precedes the Informatica text
+    ['Monitoring Alarm: acme-dw01.example.local - AMS Informatica error: 2026-11-18 01:25:42.32 [ FAILED ] Session EXAMPLE_Load.wf_Example_Load.s_m_Load', 'block'],
+    ['AMS Informatica: nightly load failed', 'block'], // the old prefix format still matches
+    ['monitoring - ams INFORMATICA error', 'block'], // case-insensitive
+    ['Monitoring Alarm: acme-dw01.example.local - Database load failed', 'none'],
+    ['Informatica load failed', 'none'] // the bare product name is not the marker
+  ];
+  for (const [title, display] of cases) {
+    const w = world();
+    const f = w.frame();
+    createWorkspace({clock: {setTimeout, clearTimeout}, doc: f.doc, title});
+    loadAll(f);
+    await settle();
+    assert.equal(buttons(f).length, 1, title);
+    assert.equal(buttons(f)[0].style.display, display, title);
+  }
+});
+
 test('origin policy: the test host mounts the button and arms the bridge; opaque origins stay inert', async () => {
   const w = world();
   const f = w.frame(TEST);
@@ -172,6 +192,36 @@ test('workflow order on a mocked record: people → verify (GET) → Save → ve
   await p.clock.advance(7000);
   assert.equal(p.button().textContent, 'Informatica', 'label restored');
   assert.equal(p.button().disabled, false);
+});
+
+test('note text: the leading "Monitoring" header block is dropped, the rest is pasted verbatim', async () => {
+  const problem = 'Problem: AMS Informatica error: 2026-11-18 01:25:42.32 [  FAILED   ] Session EXAMPLE_Load.wf_Example_Load.s_m_CFT_EVENTS FAILED at 2026-11-18 00:53:01.000 with error 0: "No errors encountered.". Log "E:\\infa_shared\\EXAMPLE_prod_integration\\SessLogs\\s_m_events.log".\n' +
+    'Problem started at 02:50:47 on 2026.11.18\nSeverity: Severity: High (4)';
+  const description = `Monitoring\n\n-------------------------------\n${problem}`;
+  const p = createInformaticaPage({workspace: {description}}).load();
+  await p.clock.advance(10);
+  click(p);
+  const result = await runToEnd(p);
+  assert.equal(result.status, 'posted');
+  assert.deepEqual(p.ws.server.posts, [problem], 'header block removed, everything after it untouched');
+});
+
+test('note text: a description that is only the "Monitoring" header fails safely; "Monitoring Alarm:" is not a header', async () => {
+  const onlyHeader = createInformaticaPage({workspace: {description: 'Monitoring\n\n-------------------------------\n'}}).load();
+  await onlyHeader.clock.advance(10);
+  click(onlyHeader);
+  const failed = await runToEnd(onlyHeader);
+  assert.equal(failed.status, 'failed');
+  assert.match(failed.error, /Description is empty/);
+  assert.equal(onlyHeader.ws.server.posts.length, 0, 'nothing posted');
+
+  const alarmLine = 'Monitoring Alarm: acme-dw01.example.local - no data\nProblem: stalled load';
+  const p = createInformaticaPage({workspace: {description: alarmLine}}).load();
+  await p.clock.advance(10);
+  click(p);
+  const result = await runToEnd(p);
+  assert.equal(result.status, 'posted');
+  assert.deepEqual(p.ws.server.posts, [alarmLine], 'only a bare "Monitoring" label line is stripped');
 });
 
 test('already-persisted list: no people typed, no list Save click; Post still submits the note', async () => {

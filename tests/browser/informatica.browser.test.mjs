@@ -34,7 +34,7 @@ const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"><title>AMS Inf
 <script>
   const host = document.querySelector('macroponent-fixture0001');
   const root = host.attachShadow({mode: 'open'});
-  root.innerHTML = '<h1>AMS Informatica: fixture record (inert)</h1><now-record-common-uiactionbar></now-record-common-uiactionbar>';
+  root.innerHTML = '<h1>Monitoring Alarm: acme-dw01.example.local - AMS Informatica error: 2026-11-18 01:25:42.32 [ FAILED ] Session EXAMPLE_Load.wf_Example_Load.s_m_Load</h1><now-record-common-uiactionbar></now-record-common-uiactionbar>';
   const bar = root.querySelector('now-record-common-uiactionbar');
   bar.attachShadow({mode: 'open'}).innerHTML = '<button type="button" disabled style="margin-left:900px">Save</button>';
   window.__fixtureAdds = 0;
