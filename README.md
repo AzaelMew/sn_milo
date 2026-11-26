@@ -6,8 +6,23 @@ KB dark-mode and timecard extensions. Every feature has its own toggle on the op
 ## Requirements
 
 - A Chromium-based browser, version 111 or newer (Chrome, Brave, Vivaldi, Edge).
-- Node.js 22 or newer — needed only to generate the manifest before loading. The extension itself has no
-  dependencies and no build step.
+- Node.js 22 or newer — used for one command, `npm run generate` (see below). There is nothing to `npm install`
+  and nothing to compile: the extension ships as plain JS/CSS/HTML.
+
+### Why a Node step at all
+
+The repository is public, so it cannot contain your ServiceNow hostnames. The committed `manifest.template.json`
+therefore carries `{{PRODUCTION_ORIGIN}}` / `{{TEST_ORIGIN}}` placeholders, and `npm run generate` fills them in
+from your gitignored `config.json`, writing the three files that actually get read at runtime:
+
+| Generated file (gitignored) | Read by |
+|---|---|
+| `manifest.json` | the browser (this is what **Load unpacked** loads) |
+| `shared/origins.generated.mjs` | `background.js` origin checks |
+| `features/timecard/config.js` | the timecard content scripts |
+
+It runs once per clone and once per update. You could hand-write those three files and skip Node, but they are
+validated against the template (`npm run generate:check`, part of `npm test`) and rewritten on every update.
 
 ## Install
 
