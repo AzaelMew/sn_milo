@@ -41,7 +41,7 @@ function makeEnv({enabled = true, noSettings = false, groupRows = [{sys_id: GROU
       else if (f === 'category') { values.subcategory = ''; reload('subcategory', subs.map((t, i) => [`s${i}`, t])); }
       if (f === 'u_change_template' && v && templateFills) setTimeout(() => { values.subcategory = `s${subs.indexOf('Server capacity change')}`; }, 40); // the form fills the Subcategory from the template
       if (f === 'subcategory' && autoFill) setTimeout(() => { values.u_contract_invoice_rate = SYS(7); displays.u_contract_invoice_rate = 'INFRA/HÄIRIÖ/Käyttöjärjestelmä Windows OS'; }, 100);
-      if (f === 'u_contract_invoice_rate') { const hit = rateRows.find(x => (x.sys_id?.value ?? x.sys_id) === v); lastContract = hit?.contract?.display_value || 'Some contract'; }
+      if (f === 'u_contract_invoice_rate') { const hit = rateResult.find(x => (x.sys_id?.value ?? x.sys_id) === v); lastContract = hit?.contract?.display_value || 'Some contract'; }
       if (f === 'assignment_group') values.assigned_to = ''; // the real form clears the assignee
       if (f === 'assigned_to' && resetAssignee) setTimeout(() => { values.assigned_to = ''; }, 120);
     }
@@ -62,6 +62,7 @@ function makeEnv({enabled = true, noSettings = false, groupRows = [{sys_id: GROU
     createElement: () => mk(), body: {appendChild() {}}, documentElement: {appendChild() {}}
   };
   let lastContract = '';
+  let rateResult = [{sys_id: RATE_ID}]; // rows of the most recent rate query (the contract comes from the record the form got)
   const contractFor = () => (values.u_contract_invoice_rate ? lastContract || 'Some contract' : '');
   let settingsCb = null;
   const settings = noSettings ? undefined : {subscribe(feature, cb) { assert.equal(feature, 'monitoring-routing'); settingsCb = cb; cb({enabled, seedOnly: false}); return () => { settingsCb = null; }; }};
@@ -75,7 +76,11 @@ function makeEnv({enabled = true, noSettings = false, groupRows = [{sys_id: GROU
       if (fetchFails) return {ok: false, status: 500};
       if (url.includes(`/sn_customerservice_case/${CASE}`)) return {ok: true, json: async () => ({result: {sys_domain: DOMAIN}})};
       if (url.includes('/api/now/table/std_change_record_producer?')) return {ok: true, json: async () => ({result: templateRows})};
-      if (url.includes('x_tifo_invoicing_invoice_rate')) return {ok: true, json: async () => ({result: rateRows})};
+      if (url.includes('x_tifo_invoicing_invoice_rate')) {
+        // rateRows: the same rows for every rate name, or a function of the (decoded) request URL for per-name rows.
+        rateResult = typeof rateRows === 'function' ? rateRows(decodeURIComponent(url)) : rateRows;
+        return {ok: true, json: async () => ({result: rateResult})};
+      }
       return {ok: true, json: async () => ({result: groupRows})};
     }
   };
@@ -182,6 +187,7 @@ for (const [name, sub] of [['Windows', 'Windows Operating system'], ['Linux', 'N
     assert.ok(env.fetched.some(f => /^\/api\/now\/table\/sys_user_group\?/.test(f.url)));
     if (name === 'Windows') {
       assert.deepEqual(env.log.find(e => e[0] === 'u_contract_invoice_rate'), ['u_contract_invoice_rate', RATE_ID, 'INFRA/HÄIRIÖ/Käyttöjärjestelmä Windows OS']);
+      assert.equal(env.fetched.filter(f => f.url.includes('x_tifo_invoicing_invoice_rate')).length, 1, 'the backup name is only queried when the first name has no match');
       const q = decodeURIComponent(env.fetched.find(f => f.url.includes('x_tifo_invoicing_invoice_rate')).url);
       assert.match(q, new RegExp(`display_name=INFRA/HÄIRIÖ/Käyttöjärjestelmä Windows OS\\^sys_domain=${DOMAIN}\\^active=true`));
     } else assert.equal(env.fetched.some(f => f.url.includes('x_tifo_invoicing_invoice_rate')), false);
@@ -260,16 +266,47 @@ test('system-owned rates do not bypass mandatory-field validation', async () => 
 });
 
 test('Windows fills everything else but leaves the rate blank and does not save when the case domain has no, or several, matching rates', async () => {
-  for (const rateRows of [[], [{sys_id: RATE_ID}, {sys_id: SYS(8)}]]) {
+  for (const [rateRows, expected] of [
+    [[], /left blank \(no active rate in the case's domain for "INFRA\/HÄIRIÖ\/Käyttöjärjestelmä Windows OS" or "INFRA\/INCIDENT\/Operating system Windows OS"\)/],
+    [[{sys_id: RATE_ID}, {sys_id: SYS(8)}], /left blank \(expected exactly one active "INFRA\/HÄIRIÖ\/Käyttöjärjestelmä Windows OS" rate in the case's domain, found 2\)/]
+  ]) {
     const env = makeEnv({rateRows});
     env.tick();
     env.bar().querySelector('[data-name="Windows"]').listeners.click();
     await until(() => env.window.__snMonitoringRouting.lastRun);
-    assert.match(env.window.__snMonitoringRouting.lastRun, /^Filled, not saved: Contract Invoice Rate left blank \(expected exactly one active/);
+    assert.match(env.window.__snMonitoringRouting.lastRun, expected);
     assert.equal(env.log.some(e => e[0] === 'u_contract_invoice_rate'), false);
     assert.equal(env.saves.length, 0);
     for (const f of ['u_type', 'category', 'subcategory', 'assignment_group', 'assigned_to']) assert.ok(env.log.some(e => e[0] === f), `${f} still filled`);
   }
+});
+
+test('Windows falls back to its backup rate name when the case domain has no rate under its own name', async () => {
+  const BACKUP = 'INFRA/INCIDENT/Operating system Windows OS';
+  const env = makeEnv({rateRows: url => (url.includes(`display_name=${BACKUP}^`) ? [{sys_id: SYS(8)}] : [])});
+  env.tick();
+  env.bar().querySelector('[data-name="Windows"]').listeners.click();
+  await until(() => env.window.__snMonitoringRouting.lastRun);
+  assert.equal(env.window.__snMonitoringRouting.lastRun, 'Saved');
+  assert.equal(env.saves.length, 1);
+  assert.deepEqual(env.log.find(e => e[0] === 'u_contract_invoice_rate'), ['u_contract_invoice_rate', SYS(8), BACKUP]);
+  const names = env.fetched.filter(f => f.url.includes('x_tifo_invoicing_invoice_rate')).map(f => /display_name=([^&^]+)/.exec(decodeURIComponent(f.url))?.[1]);
+  assert.deepEqual(names, ['INFRA/HÄIRIÖ/Käyttöjärjestelmä Windows OS', BACKUP], 'own name first, then the backup');
+});
+
+test('MSSQL falls back to its backup rate name, still restricted to the SQL contract', async () => {
+  const BACKUP = 'INFRA/INCIDENT/Tietokanta';
+  const sql = {display_value: 'SQL Database Monitoring and Management'};
+  const oracle = {display_value: 'Oracle Database Monitoring and Management'};
+  const env = makeEnv({rateRows: url => (url.includes(`display_name=${BACKUP}^`)
+    ? [{sys_id: {value: RATE_ID}, contract: oracle}, {sys_id: {value: SYS(8)}, contract: sql}]
+    : [{sys_id: {value: SYS(9)}, contract: oracle}])});
+  env.tick();
+  env.bar().querySelector('[data-name="MSSQL"]').listeners.click();
+  await until(() => env.window.__snMonitoringRouting.lastRun);
+  assert.equal(env.window.__snMonitoringRouting.lastRun, 'Saved');
+  assert.equal(env.values.u_contract_invoice_rate, SYS(8), 'the SQL-contract rate, not the Oracle one');
+  assert.deepEqual(env.log.find(e => e[0] === 'u_contract_invoice_rate'), ['u_contract_invoice_rate', SYS(8), BACKUP]);
 });
 
 test('redoes the Category write once when its change handler was missed (Subcategory list never reloaded)', async () => {
@@ -313,7 +350,7 @@ test('MSSQL leaves the rate blank and does not save when no rate is under the SQ
   env.tick();
   env.bar().querySelector('[data-name="MSSQL"]').listeners.click();
   await until(() => env.window.__snMonitoringRouting.lastRun);
-  assert.match(env.window.__snMonitoringRouting.lastRun, /^Filled, not saved: Contract Invoice Rate left blank \(expected at least one active "INFRA\/HÄIRIÖ\/Tietokanta" rate under "SQL Database/);
+  assert.match(env.window.__snMonitoringRouting.lastRun, /^Filled, not saved: Contract Invoice Rate left blank \(no active rate in the case's domain for "INFRA\/HÄIRIÖ\/Tietokanta" or "INFRA\/INCIDENT\/Tietokanta" under "SQL Database Monitoring and Management"\)$/);
   assert.equal(env.saves.length, 0);
   assert.equal(env.log.some(e => e[0] === 'u_contract_invoice_rate'), false);
 });
@@ -361,7 +398,7 @@ test('Disk: a failed template lookup stops the run (no guess about whether the t
 
 test('Disk with no rate under the case domain still fills the rest, leaves the rate blank and does not save', async () => {
   const env = await run({rateRows: []}, 'Disk');
-  assert.match(env.window.__snMonitoringRouting.lastRun, /^Filled, not saved: Contract Invoice Rate left blank \(expected at least one active/);
+  assert.match(env.window.__snMonitoringRouting.lastRun, /^Filled, not saved: Contract Invoice Rate left blank \(no active rate in the case's domain for "INFRA\/VAKIOMUUTOS/);
   assert.equal(env.saves.length, 0);
   assert.equal(env.values.assigned_to, ME);
 });

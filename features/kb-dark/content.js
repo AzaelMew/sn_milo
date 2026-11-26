@@ -1,6 +1,7 @@
 // KB dark mode — ISOLATED-world toggle (classic content script, IIFE: no global lexical declarations).
-// Injected with the declarative features/kb-dark/dark.css on the production origin's exact /kb and /kb?* routes,
-// document_start, top frame only (same scope as servicenow-kb-dark 1.0.1). The CSS is static and always present;
+// Injected with the declarative features/kb-dark/dark.css on the production origin's exact /kb and /kb?* routes (plus
+// the Time Sheet page /tcp and /tcp?*, which the dark styling covers too), document_start, top frame only (same scope as
+// servicenow-kb-dark 1.0.1). The CSS is static and always present;
 // every selector is gated by :where(:root:not([data-milo-kb-off])) (scripts/gate-kb-css.mjs). This script owns that
 // attribute on <html>:
 //   - default (attribute absent) = dark, until the effective state from shared/controller.js says otherwise;

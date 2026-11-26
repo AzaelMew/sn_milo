@@ -4,7 +4,8 @@
 // Rules enforced by validatePolicy():
 //   - feature is a known feature or 'shared' (settings infrastructure with no feature behaviour);
 //   - origins ⊆ the feature's allowed roles (FEATURES[*].origins): timecard, informatica-button, monitoring-routing, inbox-overlay (and shared) may use 'test';
-//   - kb-dark paths are exactly ['/kb', '/kb?*'] (never '/kb*', which also matches /kb-other and /kb_view.do);
+//   - kb-dark paths are exactly KB_PATHS: ['/kb', '/kb?*', '/tcp', '/tcp?*'] (never '/kb*' or '/tcp*', which would also
+//     match /kb-other, /kb_view.do and any future /tcp-prefixed route);
 //   - world ISOLATED|MAIN, run_at document_start|document_end|document_idle, boolean all_frames;
 //   - js/css are repo-relative extension files; MAIN entries carry no css;
 //   - optional `reinject: false` keeps an entry out of the developer update's open-tab reinjection (shared/reinject.mjs;
@@ -17,7 +18,8 @@
 // messages are refused as wrong-origin; use sender.origin (Chrome 112+) for those URL schemes only.
 import {FEATURES, isKnownFeature} from './features.mjs';
 
-export const KB_PATHS = Object.freeze(['/kb', '/kb?*']);
+// KB pages (/kb, /kb?*) plus the timesheet page (/tcp, /tcp?*), which the user also wants dark.
+export const KB_PATHS = Object.freeze(['/kb', '/kb?*', '/tcp', '/tcp?*']);
 const WORLDS = ['ISOLATED', 'MAIN'];
 const RUN_AT = ['document_start', 'document_end', 'document_idle'];
 const ROLES = ['production', 'test'];
@@ -44,9 +46,10 @@ export const SCRIPT_POLICY = Object.freeze([
     run_at: 'document_idle', all_frames: false, js: ['features/inbox-overlay/content.js']},
   // KB dark mode: the original's single declarative CSS entry (exact /kb + /kb?*, document_start, top frame), now
   // attribute-gated, plus the ISOLATED toggle that owns the off attribute (after the controller: same world/timing ⇒
-  // manifest order).
+  // manifest order). The same pair also covers the Service Portal Time Sheet page (/tcp + /tcp?*), which the user wants
+  // dark too: it is a Service Portal page rendering in the top document, so the top-frame scope of /kb still applies.
   {id: 'kb-dark-css', feature: 'kb-dark', origins: ['production'], paths: [...KB_PATHS], world: 'ISOLATED',
-    run_at: 'document_start', all_frames: false, css: ['features/kb-dark/dark.css']},
+    run_at: 'document_start', all_frames: false, css: ['features/kb-dark/dark.css', 'features/kb-dark/dark-tcp.css']},
   {id: 'kb-dark-toggle', feature: 'kb-dark', origins: ['production'], paths: [...KB_PATHS], world: 'ISOLATED',
     run_at: 'document_start', all_frames: false, js: ['features/kb-dark/content.js']},
   // Critical alert: exactly the original manifest's two entries (production only, top frame only). The MAIN bridge

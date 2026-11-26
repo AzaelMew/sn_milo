@@ -10,7 +10,7 @@ import {fileURLToPath} from 'node:url';
 import {
   generate, check, ensureGenerated, withGeneratedArtifacts, OUTPUT_FILES, GenerationError
 } from '../scripts/generate-config.mjs';
-import {SCRIPT_POLICY} from '../shared/script-policy.mjs';
+import {SCRIPT_POLICY, KB_PATHS} from '../shared/script-policy.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const script = path.join(repo, 'scripts', 'generate-config.mjs');
@@ -52,7 +52,7 @@ function allMatchPatterns(manifest) {
 }
 // content_scripts come from shared/script-policy.mjs; tests pass a sanitized policy with feature-shaped entries.
 const contentScriptPolicy = [
-  {id: 'kb', feature: 'kb-dark', origins: ['production'], paths: ['/kb', '/kb?*'], world: 'ISOLATED', run_at: 'document_start', all_frames: false, css: ['features/kb-dark/dark.css']},
+  {id: 'kb', feature: 'kb-dark', origins: ['production'], paths: [...KB_PATHS], world: 'ISOLATED', run_at: 'document_start', all_frames: false, css: ['features/kb-dark/dark.css']},
   {id: 'tc-native', feature: 'timecard', origins: ['test', 'production'], paths: ['/task_time_worked.do*'], world: 'MAIN', run_at: 'document_start', all_frames: true, js: ['features/timecard/config.js']}
 ];
 
@@ -106,7 +106,7 @@ test('configured origins agree exactly with manifest host grants and every match
   assert.deepEqual(new Set(manifest.host_permissions.map(originOfPattern)), configured);
   assert.equal(manifest.host_permissions.length, configured.size);
   for (const pattern of allMatchPatterns(manifest)) assert.ok(configured.has(originOfPattern(pattern)), pattern);
-  assert.deepEqual(manifest.content_scripts[0].matches, [`${PROD}/kb`, `${PROD}/kb?*`]);
+  assert.deepEqual(manifest.content_scripts[0].matches, [...KB_PATHS].map(p => `${PROD}${p}`));
   assert.deepEqual(manifest.content_scripts[1].matches, [`${TEST}/task_time_worked.do*`, `${PROD}/task_time_worked.do*`]);
   const timecardOrigins = new Set(loadTimecardConfig(read(root, 'features/timecard/config.js')).instances.map(i => i.origin));
   assert.deepEqual(timecardOrigins, configured);

@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {GATE, OFF_ATTRIBUTE, HEADER, gateCss, renderOutput, gateSelector, parseRules, ORIGINAL, OUTPUT} from '../scripts/gate-kb-css.mjs';
+import {GATE, OFF_ATTRIBUTE, HEADER, gateCss, renderOutput, renderSheet, gateSelector, parseRules, ORIGINAL, OUTPUT, SHEETS, headerFor} from '../scripts/gate-kb-css.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = rel => fs.readFileSync(path.join(repo, rel), 'utf8');
@@ -139,6 +139,31 @@ test('every original rule is gated: same rules, declarations, order; specificity
   }
   assert.equal(OFF_ATTRIBUTE, 'data-milo-kb-off');
   assert.equal(GATE, ':where(:root:not([data-milo-kb-off]))');
+});
+
+test('every sheet in SHEETS is committed fresh and fully gated (the /tcp additions too)', () => {
+  assert.deepEqual(SHEETS.map(s => [s.source, s.output]), [
+    ['features/kb-dark/source/dark.original.css', 'features/kb-dark/dark.css'],
+    ['features/kb-dark/source/tcp.extra.css', 'features/kb-dark/dark-tcp.css']
+  ]);
+  for (const sheet of SHEETS) {
+    const out = renderSheet(sheet);
+    assert.equal(read(sheet.output), out, `${sheet.output}: run \`node scripts/gate-kb-css.mjs\` to regenerate`);
+    assert.ok(out.startsWith(headerFor(sheet)), `${sheet.output}: header names its own source`);
+    const rules = parseRules(out);
+    assert.ok(rules.length > 0, `${sheet.output}: has rules`);
+    for (const r of rules) {
+      for (const branch of splitList(r.selector)) {
+        assert.equal(branch.split(GATE).length - 1, 1, `${sheet.output}: exactly one gate in ${branch}`);
+        assert.ok(!/^\s*$/.test(branch.replace(GATE, '')), `${sheet.output}: gated selector is not empty`);
+      }
+    }
+  }
+  // the tcp sheet only touches /tcp-specific classes: every branch is rooted at html body
+  for (const r of parseRules(read('features/kb-dark/dark-tcp.css'))) {
+    for (const branch of splitList(r.selector)) assert.match(branch.trim(), /^html:where\(:root:not\(\[data-milo-kb-off\]\)\) body /, branch);
+  }
+  assert.equal(parseRules(read('features/kb-dark/dark-tcp.css')).length, 14, 'the tcp sheet has 14 style rules');
 });
 
 test('gateSelector: lists, pseudo-elements, root compounds, descendants, strings/escapes', () => {

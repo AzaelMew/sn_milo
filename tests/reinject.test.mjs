@@ -17,6 +17,10 @@ test('matchesPath mirrors Chrome match-pattern paths (path+query, * glob, no fra
   assert.equal(matchesPath(['/kb', '/kb?*'], `${P}/kb-other`), false);
   assert.equal(matchesPath(['/kb', '/kb?*'], `${P}/kb_view.do?x=1`), false);
   assert.equal(matchesPath(['/kb', '/kb?*'], `${P}/kb/`), false);
+  assert.equal(matchesPath(['/tcp', '/tcp?*'], `${P}/tcp?sysparm_timesheet_id=abc`), true);
+  assert.equal(matchesPath(['/tcp', '/tcp?*'], `${P}/tcp`), true);
+  assert.equal(matchesPath(['/tcp', '/tcp?*'], `${P}/tcp-x`), false, '? is a literal in match patterns');
+  assert.equal(matchesPath(['/tcp', '/tcp?*'], `${P}/tcp/x`), false);
   assert.equal(matchesPath(['/*'], `${P}/anything?a=b`), true);
   assert.equal(matchesPath(['/task_time_worked.do*'], `${P}/task_time_worked.do?sys_id=-1`), true);
   assert.equal(matchesPath(['/a.b*'], `${P}/aXb`), false, 'dots are literal');
@@ -43,15 +47,20 @@ test('test host receives timecard overlay, informatica button, Inbox + shared on
   for (const s of plan.steps) assert.ok(['shared', 'timecard', 'informatica-button', 'inbox-overlay'].includes(s.feature));
 });
 
-test('/kb and /kb?* get the KB toggle (JS); gated css even while disabled; other kb-like paths do not', () => {
+test('/kb, /kb?*, /tcp, /tcp?* get the KB toggle (JS); gated css even while disabled; other lookalike paths do not', () => {
   const [kb] = planReinjection([{id: 3, url: `${P}/kb`}], {origins: ORIGINS});
   assert.ok(ids(kb).includes('kb-dark-toggle'));
   assert.ok(ids(kb).includes('kb-dark-css'), 'css installed for later enable');
   const [kbq] = planReinjection([{id: 4, url: `${P}/kb?id=kb_home`}], {origins: ORIGINS, enabled: {'kb-dark': true}});
   assert.ok(ids(kbq).includes('kb-dark-toggle'));
   const css = kbq.steps.find(s => s.id === 'kb-dark-css');
-  assert.deepEqual([css.css, css.files, css.world], [['features/kb-dark/dark.css'], [], 'ISOLATED']);
-  for (const url of [`${P}/kb-other`, `${P}/kb_view.do?sys_kb_id=1`, `${P}/kb/`, `${T}/kb`, `${T}/kb?x=1`]) {
+  assert.deepEqual([css.css, css.files, css.world], [['features/kb-dark/dark.css', 'features/kb-dark/dark-tcp.css'], [], 'ISOLATED']);
+  for (const url of [`${P}/tcp`, `${P}/tcp?sysparm_timesheet_id=abc&sysparm_stack=no`]) {
+    const [plan] = planReinjection([{id: 6, url}], {origins: ORIGINS, enabled: {'kb-dark': true}});
+    assert.deepEqual(ids(plan).filter(i => i.startsWith('kb-dark')), ['kb-dark-css', 'kb-dark-toggle'], url);
+    for (const s of plan.steps) if (s.id.startsWith('kb-dark')) assert.equal(s.allFrames, false, `${url}: top frame only`);
+  }
+  for (const url of [`${P}/kb-other`, `${P}/kb_view.do?sys_kb_id=1`, `${P}/kb/`, `${T}/kb`, `${T}/kb?x=1`, `${P}/tcp-other`, `${T}/tcp`, `${T}/tcp?x=1`]) {
     const out = planReinjection([{id: 5, url}], {origins: ORIGINS, enabled: {'kb-dark': true}});
     assert.ok(!out.some(p => ids(p).some(i => i.startsWith('kb-dark'))), url);
   }
@@ -120,7 +129,7 @@ test('reinjectOpenTabs: exact targets, per-step injection, no other chrome API',
   const bridge = exec.find(i => i.files[0] === 'features/informatica-button/page.js');
   assert.deepEqual(bridge, {target: {tabId: 1, documentIds: ['doc-1']}, files: ['features/informatica-button/page.js'], world: 'MAIN'});
   assert.equal(exec.filter(i => i.target.tabId === 2).length, 6);
-  assert.deepEqual(calls.filter(c => c[0] === 'css').map(c => c[1]), [{target: {tabId: 1, documentIds: ['doc-1']}, files: ['features/kb-dark/dark.css']}]);
+  assert.deepEqual(calls.filter(c => c[0] === 'css').map(c => c[1]), [{target: {tabId: 1, documentIds: ['doc-1']}, files: ['features/kb-dark/dark.css', 'features/kb-dark/dark-tcp.css']}]);
   assert.deepEqual(summary.tabs.map(t => [t.tabId, t.ok]), [[1, true], [2, true]]);
   assert.equal(summary.failed, 0);
 });

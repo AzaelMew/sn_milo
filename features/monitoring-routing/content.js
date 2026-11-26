@@ -4,7 +4,8 @@
 // otherwise it bails without saving (localStorage.snMrNoSave = "1" fills and verifies but skips the save, for tests).
 //   Type = Incident, Category/Subcategory per button, Assignment group = Monitoring, Assigned to = the signed-in user
 //   (g_user, so no person is named in source), and Contract Invoice Rate when the system did not fill it after the
-//   Subcategory change: the active rate of that name in the case's own domain (never overwritten when filled).
+//   Subcategory change: the active rate of that name (or of its backup names, in order) in the case's own domain
+//   (never overwritten when filled).
 // Runs in MAIN because the form is driven through g_form (choice lists reload and reference fields clear dependents
 // through the page's own client scripts). Network: read-only GETs only (group, case domain, rate); the single write is
 // the form's Save click. Buttons are absolutely positioned in the Channel row's empty gutter (no layout space).
@@ -27,8 +28,10 @@
 	const TYPE = {field: 'u_type', label: 'Incident'};
 	const CATEGORY = {field: 'category', label: 'IT Infrastructure / Server'};
 	const GROUP = 'Monitoring';
-	// Contract Invoice Rate: the system normally fills it after the Subcategory change. When it does not, `rate` names
-	// the rate record to put there (display_name, in the case's own domain, active; matching contract name when configured).
+	// Contract Invoice Rate: the system normally fills it after the Subcategory change. When it does not, `rates` names
+	// the rate records to put there in order: the button's own name first, then its backup names (the invoicing system
+	// carries the same rate under more than one path, e.g. HÄIRIÖ vs INCIDENT). Each name is a display_name, looked up
+	// in the case's own domain and active; the first name with a match wins.
 	const RATE = {field: 'u_contract_invoice_rate', table: 'x_tifo_invoicing_invoice_rate', autoFillWaitMs: 500};
 	// Change Template (Disk): a reference to std_change_record_producer. Setting it makes the form fill the Subcategory itself.
 	const TEMPLATE = {field: 'u_change_template', table: 'std_change_record_producer'};
@@ -36,12 +39,14 @@
 	// use either record. `firstRate` accepts the first of several same-named rates. `template` (optional): use that Change Template
 	// when it exists (the form then fills `subcategory`), otherwise just choose `subcategory`.
 	const BUTTONS = [
-		{name: 'Windows', category: CATEGORY.label, subcategory: 'Windows Operating system', rate: 'INFRA/HÄIRIÖ/Käyttöjärjestelmä Windows OS'},
+		{name: 'Windows', category: CATEGORY.label, subcategory: 'Windows Operating system',
+			rates: ['INFRA/HÄIRIÖ/Käyttöjärjestelmä Windows OS', 'INFRA/INCIDENT/Operating system Windows OS']},
 		{name: 'Linux', category: CATEGORY.label, subcategory: 'Non-Windows'},
-		{name: 'MSSQL', category: 'IT Infrastructure / Application platform', subcategory: 'Database', rate: 'INFRA/HÄIRIÖ/Tietokanta',
+		{name: 'MSSQL', category: 'IT Infrastructure / Application platform', subcategory: 'Database',
+			rates: ['INFRA/HÄIRIÖ/Tietokanta', 'INFRA/INCIDENT/Tietokanta'],
 			contract: 'SQL Database Monitoring and Management'},
 		{name: 'Disk', type: 'Change', category: 'Standard', template: 'Server capacity change', subcategory: 'Server capacity change',
-			rate: 'INFRA/VAKIOMUUTOS/Kapasiteetin lisäys/poisto', firstRate: true}
+			rates: ['INFRA/VAKIOMUUTOS/Kapasiteetin lisäys/poisto'], firstRate: true}
 	];
 
 	const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -135,19 +140,29 @@
 		return rows[0].sys_id;
 	}
 
-	// The rate record for THIS case: rates are per customer domain, so match the case's own sys_domain.
-	async function rateId(r, displayName, contractName, first) {
+	// The rate record for THIS case: rates are per customer domain, so match the case's own sys_domain. `names` is
+	// tried in order (the button's own name, then its backup names): the first name with a match wins, so a name that
+	// is absent from this customer's domain falls through to the next. A name that IS present but ambiguous (several
+	// active rates, no configured contract) is an error, not a reason to try the next name.
+	async function rateId(r, names, contractName, first) {
 		const caseId = window.g_form.getUniqueValue?.();
 		if (!isId(caseId)) fail('case sys_id not available');
 		const rec = await getJson(r, `/api/now/table/${TABLE}/${caseId}?sysparm_fields=sys_domain&sysparm_exclude_reference_link=true`, 'case domain');
 		if (!isId(rec?.sys_domain)) fail('case domain not available');
-		const rows = await getJson(r, `/api/now/table/${RATE.table}?sysparm_limit=20&sysparm_display_value=all&sysparm_exclude_reference_link=true&sysparm_fields=sys_id,contract&sysparm_query=${encodeURIComponent(`display_name=${displayName}^sys_domain=${rec.sys_domain}^active=true`)}`, 'rate');
 		const field = v => (v && typeof v === 'object' ? v.value : v);
 		const shown = v => (v && typeof v === 'object' ? v.display_value : v);
-		const match = Array.isArray(rows) ? rows.filter(row => !contractName || shown(row.contract) === contractName) : [];
-		// With an explicit contract name, the user accepts the first match even if distinct contracts share that name.
-		if (!match.length || (!contractName && !first && match.length !== 1) || !isId(field(match[0].sys_id))) fail(`expected ${contractName || first ? 'at least one' : 'exactly one'} active "${displayName}" rate${contractName ? ` under "${contractName}"` : ''} in the case's domain`);
-		return field(match[0].sys_id);
+		for (const displayName of names) {
+			const rows = await getJson(r, `/api/now/table/${RATE.table}?sysparm_limit=20&sysparm_display_value=all&sysparm_exclude_reference_link=true&sysparm_fields=sys_id,contract&sysparm_query=${encodeURIComponent(`display_name=${displayName}^sys_domain=${rec.sys_domain}^active=true`)}`, 'rate');
+			const match = (Array.isArray(rows) ? rows.filter(row => !contractName || shown(row.contract) === contractName) : [])
+				.filter(row => isId(field(row.sys_id)));
+			if (!match.length) continue; // not in this case's domain: try the backup name
+			// With an explicit contract name, the user accepts the first match even if distinct contracts share that name.
+			if (!contractName && !first && match.length !== 1) {
+				fail(`expected exactly one active "${displayName}" rate in the case's domain, found ${match.length}`);
+			}
+			return {id: field(match[0].sys_id), name: displayName};
+		}
+		fail(`no active rate in the case's domain for ${names.map(name => `"${name}"`).join(' or ')}${contractName ? ` under "${contractName}"` : ''}`);
 	}
 
 	// The Change Template record by name (null when none exists; a failed lookup is an error, not "missing").
@@ -170,7 +185,7 @@
 		if (!isId(me) || !myName) fail('signed-in user not available');
 		const gidPromise = groupId(r); // independent of the form: resolve while the choice lists reload
 		gidPromise.catch(() => {});
-		const ratePromise = button.rate ? rateId(r, button.rate, button.contract, button.firstRate) : null; // only awaited if the system leaves the field empty
+		const ratePromise = button.rates ? rateId(r, button.rates, button.contract, button.firstRate) : null; // only awaited if the system leaves the field empty
 		ratePromise?.catch(() => {});
 		const typeLabel = button.type || TYPE.label;
 		const templatePromise = button.template ? templateId(r, button.template) : null;
@@ -203,16 +218,18 @@
 		// writes above already took; only fill it ourselves when it did not (the wait counts from the Subcategory write).
 		const rateField = RATE.field;
 		let rateSet = null; // only our own write creates a local rate/contract expectation
+		let rateName = null; // the rate name that actually matched (the button's own, or one of its backups)
 		let rateIssue = null; // why Contract Invoice Rate stays blank (the run then fills the rest but does not save)
 		if (!window.g_form.getValue(rateField)) {
 			await waitFor(r, () => window.g_form.getValue(rateField), Math.max(0, subAt + RATE.autoFillWaitMs - Date.now()), 40);
-			if (button.rate && !window.g_form.getValue(rateField)) {
+			if (button.rates && !window.g_form.getValue(rateField)) {
 				// A rate that cannot be found/set must not abort the run: fill the rest, leave it blank, do not save.
 				try {
-					const id = await ratePromise;
+					const rate = await ratePromise;
 					if (!window.g_form.getValue(rateField)) {
-						await setReference(r, rateField, id, button.rate);
-						rateSet = id;
+						await setReference(r, rateField, rate.id, rate.name);
+						rateSet = rate.id;
+						rateName = rate.name;
 					}
 				} catch (error) {
 					if (error instanceof Cancelled) throw error;
@@ -224,7 +241,7 @@
 
 		// Double check: re-read every field independently (what the form shows + g_form), twice with a pause so a late
 		// reset by the page is caught. Derived fields (Contract) get a moment to appear. Any mismatch => bail, no save.
-		const exp = {typeLabel, templateSet, type: typeValue, category: categoryValue, sub: subValue, gid, me, myName, rateSet, rateBlank: Boolean(rateIssue)};
+		const exp = {typeLabel, templateSet, type: typeValue, category: categoryValue, sub: subValue, gid, me, myName, rateSet, rateName, rateBlank: Boolean(rateIssue)};
 		let wrong = problems(button, exp);
 		for (const end = Date.now() + 2000; wrong.length && Date.now() < end;) { await sleep(100); checkpoint(r); wrong = problems(button, exp); }
 		if (!wrong.length) { await sleep(300); checkpoint(r); wrong = problems(button, exp); }
@@ -257,7 +274,7 @@
 		if (f.getValue('assigned_to') !== exp.me) out.push('Assigned to is a different user');
 		if (exp.rateSet) {
 			if (!f.getValue(RATE.field)) out.push('Contract Invoice Rate is empty');
-			else same('Contract Invoice Rate', shownValue(RATE.field), button.rate);
+			else same('Contract Invoice Rate', shownValue(RATE.field), exp.rateName);
 			if (f.getValue(RATE.field) !== exp.rateSet) out.push('Contract Invoice Rate is a different record');
 			if (button.contract) same('Contract', f.getDisplayValue?.('contract'), button.contract);
 		}

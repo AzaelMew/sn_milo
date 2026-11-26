@@ -1,0 +1,71 @@
+/* Time Sheet Portal (/tcp) additions on top of the original KB sheet.
+   The portal's own widgets and the tcp app do not use the Bootstrap panel markup the base sheet
+   themes: white content panels, white 3px grid gaps, a white header calendar and hard-coded dark
+   greys for text stay light otherwise. Same palette variables, everything scoped to tcp classes so
+   the sheet is inert on /kb. Generated into features/kb-dark/dark-tcp.css by scripts/gate-kb-css.mjs
+   (do not edit that file). */
+
+/* ---- content panels ---------------------------------------------------------------- */
+html body .cards-panel-container,
+html body .tab-content,
+html body .tasks-panel,
+html body .center-panel,
+html body .col-md-9 {
+  background-color: var(--tk-kb-bg) !important;
+  color: var(--tk-kb-text) !important;
+}
+html body .cards-panel-container .card,
+html body .cards-panel-container .cards-panel-body {
+  background-color: var(--tk-kb-surface) !important;
+  border-color: var(--tk-kb-border) !important;
+}
+
+/* ---- tabs, dividers ---------------------------------------------------------------- */
+html body .cards-panel-container .nav-tabs,
+html body .cards-panel-container .divider {
+  background-color: var(--tk-kb-raised) !important;
+  border-color: var(--tk-kb-border) !important;
+}
+html body .cards-panel-container .nav-tabs > li > a { color: var(--tk-kb-muted) !important; }
+html body .cards-panel-container .nav-tabs > li.active > a {
+  background-color: var(--tk-kb-bg) !important;
+  color: var(--tk-kb-text) !important;
+}
+
+/* ---- timesheet grid strips and cells ----------------------------------------------- */
+html body :where(.grid-header, .submit-cntr, .grid-footer, .table-headers) {
+  background-color: var(--tk-kb-raised) !important;
+  color: var(--tk-kb-text) !important;
+  border-color: var(--tk-kb-border) !important;
+  background-image: none !important;
+}
+html body .flex-item {
+  background-color: var(--tk-kb-surface) !important;
+  color: var(--tk-kb-text) !important;
+  border-color: var(--tk-kb-bg) !important;
+}
+/* The app pins the week totals with a 0,5,0 !important rule (.v… .tc-table-layout .flex
+   .flex-item.selected), so the override repeats that shape and adds .total. */
+html body .tc-table-layout .flex .flex-item.total.selected,
+html body .tc-table-layout .flex .flex-item.selected:not(.total) {
+  background-color: #16414a !important;
+  color: #c5eaf2 !important;
+  border-color: #21545f !important;
+}
+
+/* ---- header calendar (day columns) ------------------------------------------------ */
+html body [class*="cal-container-"] { border-color: var(--tk-kb-border) !important; }
+html body .cal-container-3,
+html body .cal-text { background-color: var(--tk-kb-surface) !important; }
+html body .cal-container-4 { background-color: var(--tk-kb-raised) !important; }
+
+html body .sub-avatar {
+  background-color: var(--tk-kb-raised) !important;
+  color: var(--tk-kb-text) !important;
+}
+
+/* ---- text: the app hard-codes dark greys on its own classes ------------------------ */
+html body :where(.cards-panel-container, .tcp-header, .center-panel) :where(span, i, div, strong, small, p, label, b, u, a):not(:where(.btn, .btn-link, .link-button)) {
+  color: var(--tk-kb-text) !important;
+}
+html body :where(.cards-panel-container, .tcp-header, .center-panel) a:not(.btn) { color: var(--tk-kb-link) !important; }

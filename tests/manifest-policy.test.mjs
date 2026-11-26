@@ -30,7 +30,7 @@ test('policy is valid and frozen; controller + MAIN helper entries exist exactly
   assert.equal(byId['main-settings'].all_frames, true);
   assert.ok(SCRIPT_POLICY.indexOf(byId['main-settings']) < SCRIPT_POLICY.findIndex(e => e.world === 'MAIN' && e.feature !== 'shared') || !SCRIPT_POLICY.some(e => e.world === 'MAIN' && e.feature !== 'shared'),
     'MAIN helper precedes MAIN feature entries');
-  assert.deepEqual([...KB_PATHS], ['/kb', '/kb?*']);
+  assert.deepEqual([...KB_PATHS], ['/kb', '/kb?*', '/tcp', '/tcp?*']);
 });
 
 test('every policy file exists in the repo', () => {
@@ -86,10 +86,11 @@ test('validator: test host only for timecard (and shared infrastructure); featur
   }
 });
 
-test('validator: KB patterns exactly /kb and /kb?* (never /kb*)', () => {
+test('validator: KB patterns exactly KB_PATHS (/kb, /kb?*, /tcp, /tcp?*; never /kb* or /tcp*)', () => {
   const kb = over => entry({feature: 'kb-dark', world: 'ISOLATED', run_at: 'document_start', js: undefined, css: ['features/kb-dark/dark.css'], ...over});
-  assert.deepEqual(validatePolicy([kb({paths: ['/kb', '/kb?*']})]), []);
-  for (const paths of [['/kb*'], ['/kb'], ['/kb', '/kb*'], ['/*'], ['/kb?*', '/kb']]) assert.match(validatePolicy([kb({paths})]).join(), /kb-dark/, JSON.stringify(paths));
+  assert.deepEqual(validatePolicy([kb({paths: [...KB_PATHS]})]), []);
+  for (const paths of [['/kb*'], ['/kb'], ['/kb', '/kb*'], ['/*'], ['/kb?*', '/kb'], ['/tcp*'], ['/tcp'], KB_PATHS.slice(0, 2)])
+    assert.match(validatePolicy([kb({paths})]).join(), /kb-dark/, JSON.stringify(paths));
 });
 
 test('validator: world / run_at / files / ids / path syntax', () => {

@@ -16,7 +16,7 @@ export const PACKAGE_FILES = Object.freeze([
   'features/informatica-button/content.js', 'features/informatica-button/page.js',
   'features/monitoring-routing/content.js',
   'features/inbox-overlay/content.js',
-  'features/kb-dark/content.js', 'features/kb-dark/dark.css',
+  'features/kb-dark/content.js', 'features/kb-dark/dark.css', 'features/kb-dark/dark-tcp.css',
   'features/timecard/background.mjs', 'features/timecard/config.js', 'features/timecard/core.js',
   'features/timecard/quick-actions.js', 'features/timecard/content.js', 'features/timecard/native-compat.js', 'features/timecard/native-actions.js'
 ]);

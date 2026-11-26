@@ -172,13 +172,14 @@ test('extension context invalidated: the attribute keeps its last value (no flip
   }
 });
 
-test('policy: CSS + toggle on production /kb and /kb?* only, document_start, top frame, toggle after the controller', () => {
+test('policy: CSS + toggle on production /kb, /kb?*, /tcp and /tcp?* only, document_start, top frame, toggle after the controller', () => {
   const kb = SCRIPT_POLICY.filter(e => e.feature === 'kb-dark');
   assert.deepEqual(kb.map(e => e.id), ['kb-dark-css', 'kb-dark-toggle']);
   const built = buildContentScripts({production: PROD, test: TEST}, kb);
+  const matches = [...KB_PATHS].map(p => `${PROD}${p}`);
   assert.deepEqual(built, [
-    {matches: [`${PROD}/kb`, `${PROD}/kb?*`], css: ['features/kb-dark/dark.css'], run_at: 'document_start', world: 'ISOLATED', all_frames: false},
-    {matches: [`${PROD}/kb`, `${PROD}/kb?*`], js: [TOGGLE], run_at: 'document_start', world: 'ISOLATED', all_frames: false}
+    {matches, css: ['features/kb-dark/dark.css', 'features/kb-dark/dark-tcp.css'], run_at: 'document_start', world: 'ISOLATED', all_frames: false},
+    {matches, js: [TOGGLE], run_at: 'document_start', world: 'ISOLATED', all_frames: false}
   ]);
   for (const e of kb) { assert.deepEqual([...e.paths], [...KB_PATHS]); assert.deepEqual([...e.origins], ['production']); }
   const idx = id => SCRIPT_POLICY.findIndex(e => e.id === id);
